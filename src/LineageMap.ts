@@ -1,5 +1,5 @@
 import * as d3 from 'd3';
-import { LineageMapOptions, Position, Graph, Node, Edge, TableLevel } from "./types/index"
+import { LineageMapOptions, Position, Graph, Node, Edge, TableLevel, FieldNode } from "./types/index"
 
 export class LineageMap {
     private container: HTMLElement;
@@ -186,7 +186,7 @@ export class LineageMap {
             .text(data.name);
 
         // If there's a transformation, add an indicator
-        if (data.transformation) {
+        if (data.type === "field" && data.transformation) {
             fieldGroup.append('text')
                 .attr('class', 'transform-indicator')
                 .attr('x', tableWidth - 20)
@@ -202,17 +202,20 @@ export class LineageMap {
 
     handleFieldClick(graph: Graph, fieldId: string) {
         const field = graph.nodes.find(n => n.id === fieldId);
-        if (!field) return;
-
+        if (!(field && 'tableId' in field)) return;
+    
+        // Narrowing `field` to a specific type
+        const fieldNode = field as FieldNode;
+    
         if (this.selectedField === fieldId) {
             // Deselect if clicking the same field
             this.selectedField = null;
             this.hideTransformationPopup();
         } else {
             this.selectedField = fieldId;
-            this.showTransformationPopup(field, graph);
+            this.showTransformationPopup(fieldNode, graph);
         }
-    }
+    }    
 
     wrapText(
         text: string,
@@ -277,7 +280,7 @@ export class LineageMap {
         return lines;
     }
 
-    showTransformationPopup(field: Node, graph: Graph) {
+    showTransformationPopup(field: FieldNode, graph: Graph) {
         this.hideTransformationPopup();
 
         if (!field.transformation) return;
@@ -742,12 +745,11 @@ export class LineageMap {
         const edgesByTables = new Map<string, Edge[]>();
         edges.forEach(edge => {
             if (edge.type === 'table-table') return;
-    
+        
             const sourceNode = graph.nodes.find(n => n.id === edge.source);
             const targetNode = graph.nodes.find(n => n.id === edge.target);
-            if (!sourceNode || !targetNode) return;
-    
-            // Only process edges where both tables are expanded
+            if (!sourceNode?.tableId || !targetNode?.tableId) return;
+        
             if (!this.expandedTables.has(sourceNode.tableId) || 
                 !this.expandedTables.has(targetNode.tableId)) return;
     

@@ -1,10 +1,20 @@
-export interface Node {
+export interface BaseNode {
   id: string;
-  type: 'table' | 'field';
   name: string;
-  tableId?: string;
-  transformation?: string;
 }
+
+export interface TableNode extends BaseNode {
+  type: 'table';
+  tableId?: string;
+}
+
+export interface FieldNode extends BaseNode {
+  type: 'field';
+  tableId: string;
+  transformation: string;
+}
+
+export type Node = TableNode | FieldNode;
 
 export interface Edge {
   id: string;

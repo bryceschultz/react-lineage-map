@@ -1,6 +1,6 @@
-# lineage-mapper
+# react-lineage-map
 
-Build out field level lineage mappings/visualizations
+Build out field level lineage mappings, visualizations, and transformations using react
 
 ## Getting Started
 installation

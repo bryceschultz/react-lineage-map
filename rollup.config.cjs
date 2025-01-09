@@ -1,12 +1,12 @@
-import resolve from '@rollup/plugin-node-resolve';
-import commonjs from '@rollup/plugin-commonjs';
-import typescript from '@rollup/plugin-typescript';
-import { babel } from '@rollup/plugin-babel';
-import dts from 'rollup-plugin-dts';
-
+const resolve = require('@rollup/plugin-node-resolve');
+const commonjs = require('@rollup/plugin-commonjs');
+const typescript = require('@rollup/plugin-typescript');
+const { babel } = require('@rollup/plugin-babel');
+const dts = require('rollup-plugin-dts');
 const packageJson = require('./package.json');
 
-export default [
+
+module.exports = [
   {
     input: 'src/index.ts',
     output: [
@@ -24,7 +24,9 @@ export default [
     plugins: [
       resolve(),
       commonjs(),
-      typescript({ tsconfig: './tsconfig.json' }),
+      typescript({ 
+        tsconfig: './tsconfig.json',
+      }),
       babel({
         exclude: 'node_modules/**',
         babelHelpers: 'bundled',
@@ -33,8 +35,8 @@ export default [
     external: ['react', 'react-dom', 'd3'],
   },
   {
-    input: 'dist/esm/types/index.d.ts',
+    input: 'dist/types/index.d.ts',
     output: [{ file: 'dist/index.d.ts', format: 'esm' }],
-    plugins: [dts()],
+    plugins: [dts.dts()],
   },
 ];
