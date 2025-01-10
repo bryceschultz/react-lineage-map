@@ -25,7 +25,8 @@ export class LineageMap {
             fieldHeight: options.fieldHeight || 20,
             fieldSpacing: options.fieldSpacing || 4,
             levelPadding: options.levelPadding || 100,
-            verticalPadding: options.verticalPadding || 50
+            verticalPadding: options.verticalPadding || 50,
+            popUpWidth: options.popUpWidth || 300
         };
 
         this.init();
@@ -64,28 +65,31 @@ export class LineageMap {
         });
 
         // Regular expression to find field references
-        const fieldRefRegex = /field[A-Za-z]\d+/g;
+        const fieldRefRegex = /[a-zA-Z_]+:[a-zA-Z_]+\d*/g;
 
         // Validate each node's transformation
         graph.nodes.forEach(node => {
             if (node.type === 'field' && node.transformation) {
                 const errors: string[] = [];
+
+                // Extract referenced fields from transformation
                 const referencedFields = (node.transformation.match(fieldRefRegex) || []) as string[];
 
-                // Check each referenced field
-                referencedFields.forEach(fieldRef => {
-                    const incomingFields = incomingEdges.get(node.id) || new Set();
+                // Ensure uniqueness of referenced fields
+                const referencedFieldSet = new Set(referencedFields);
 
+                // Check each referenced field
+                const incomingFields = incomingEdges.get(node.id) || new Set();
+                referencedFieldSet.forEach(fieldRef => {
                     if (!incomingFields.has(fieldRef)) {
-                        errors.push(`Field "${fieldRef}" is used in transformation but has no edge connecting to "${node.id}"`);
+                        errors.push(`Field "${fieldRef}" is used in transformation but has no edge connecting to "${node.id}".`);
                     }
                 });
 
                 // Check if there are edges that aren't used in the transformation
-                const incomingFields = incomingEdges.get(node.id) || new Set<string>();
                 incomingFields.forEach(sourceField => {
-                    if (!referencedFields.includes(sourceField)) {
-                        errors.push(`Field "${sourceField}" has an edge but isn't used in the transformation`);
+                    if (!referencedFieldSet.has(sourceField)) {
+                        errors.push(`Field "${sourceField}" has an edge but isn't used in the transformation.`);
                     }
                 });
 
@@ -111,7 +115,7 @@ export class LineageMap {
 
         // Add table header
         node.append('rect')
-            .attr('class', 'table-header')
+            .attr('class', 'table-header clickable-area')
             .attr('width', tableWidth)
             .attr('height', tableHeight)
             .attr('fill', '#f5f5f5')
@@ -120,26 +124,30 @@ export class LineageMap {
 
         // Add table name
         node.append('text')
+            .attr('class', 'clickable-area')
             .attr('x', 10)
             .attr('y', tableHeight / 2)
             .attr('dy', '0.35em')
             .attr('fill', '#333333')
             .style('font-family', 'sans-serif')
             .style('font-size', '12px')
-            .text(data.name);
+            .text(data.name)
+            .style('pointer-events', 'none');
 
         // Add expansion indicator
         const isExpanded = this.expandedTables.has(data.id);
         node.append('text')
+            .attr('class', 'clickable-area')
             .attr('x', tableWidth - 20)
             .attr('y', tableHeight / 2)
             .attr('dy', '0.35em')
             .attr('fill', '#666666')
             .style('font-family', 'sans-serif')
             .style('font-size', '12px')
-            .text(isExpanded ? '−' : '+');
+            .text(isExpanded ? '−' : '+')
+            .style('pointer-events', 'none');
     }
-    
+
     private renderField(node: d3.Selection<SVGGElement, Node, null, undefined>, data: Node): void {
         const { tableWidth, fieldHeight } = this.options;
 
@@ -185,18 +193,22 @@ export class LineageMap {
             .style('pointer-events', 'none')
             .text(data.name);
 
-        // If there's a transformation, add an indicator
-        if (data.type === "field" && data.transformation) {
+        // Add transformation or note indicator
+        const fieldData = data as FieldNode;
+        if (fieldData.transformation || fieldData.note) {
+            const icon = fieldData.transformation ? 'ƒ' : 'ⓘ';
+            const color = this.validationErrors.has(data.id) ? '#ff9800' : '#666666';
+
             fieldGroup.append('text')
-                .attr('class', 'transform-indicator')
+                .attr('class', fieldData.transformation ? 'transform-indicator' : 'note-indicator')
                 .attr('x', tableWidth - 20)
                 .attr('y', fieldHeight / 2)
                 .attr('dy', '0.35em')
-                .attr('fill', this.validationErrors.has(data.id) ? '#ff9800' : '#666666')
+                .attr('fill', color)
                 .style('font-family', 'sans-serif')
                 .style('font-size', '11px')
                 .style('pointer-events', 'none')
-                .text('ƒ');
+                .text(icon);
         }
     }
 
@@ -283,7 +295,7 @@ export class LineageMap {
     showTransformationPopup(field: FieldNode, graph: Graph) {
         this.hideTransformationPopup();
 
-        if (!field.transformation) return;
+        if (!field.transformation && !field.note) return;
 
         const pos = this.getFieldPosition(field.id);
         if (!pos) return;
@@ -293,81 +305,77 @@ export class LineageMap {
             .attr('class', 'transformation-popup');
 
         const padding = 10;
-        const maxWidth = 400;
-        const minWidth = 200;
+        const maxWidth = this.options.popUpWidth;
         const lineHeight = 20;
-        const textWidth = maxWidth - (padding * 2); // Available width for text
-
-        // Replace field IDs with field names in the transformation text
-        let transformationText = field.transformation;
-        const fieldRefRegex = /field[A-Za-z]\d+/g;
-        const fieldRefs = field.transformation.match(fieldRefRegex) || [];
-
-        fieldRefs.forEach(fieldId => {
-            const referencedField = graph.nodes.find(n => n.id === fieldId);
-            if (referencedField) {
-                transformationText = transformationText.replace(
-                    fieldId,
-                    referencedField.name
-                );
-            }
-        });
+        const textWidth = maxWidth - (padding * 2);
 
         // Create temporary text element for measurements
         const tempText = popup.append('text')
             .style('font-family', 'sans-serif')
             .style('font-size', '12px');
+    
+        const lines: { text: string; isError: boolean }[] = [];
+    
+        // Add transformation if it exists
+        if (field.transformation) {
+            let transformationText = field.transformation;
+            const fieldRefRegex = /[a-zA-Z_]+:[a-zA-Z_]+\d*/g;
+            const fieldRefs = field.transformation.match(fieldRefRegex) || [];
 
-        // Process transformation text
-        const transformationLines = this.wrapText(
-            `Transformation: ${transformationText}`,
-            textWidth,
-            tempText,
-            false
-        );
-
-        // Process error messages if they exist
-        let errorLines = [];
+            fieldRefs.forEach(fieldId => {
+                const referencedField = graph.nodes.find(n => n.id === fieldId && n.type === 'field');
+                if (referencedField) {
+                    transformationText = transformationText.replace(
+                        new RegExp(`\\b${fieldId}\\b`, 'g'),
+                        referencedField.name
+                    );
+                }
+            });
+    
+            lines.push(...this.wrapText(
+                `Transformation: ${transformationText}`,
+                textWidth,
+                tempText,
+                false
+            ));
+            
+            // Add a blank line if both transformation and note exist
+            if (field.note) {
+                lines.push({ text: '', isError: false });
+            }
+        }
+    
+        // Add note if it exists
+        if (field.note) {
+            lines.push(...this.wrapText(
+                `Note: ${field.note}`,
+                textWidth,
+                tempText,
+                false
+            ));
+        }
+    
+        // Add error messages if they exist
         const errors = this.validationErrors.get(field.id);
         if (errors && errors.length > 0) {
-            errorLines.push({
-                text: 'Validation Errors:',
-                isError: true
-            });
+            lines.push({ text: '', isError: false });
+            lines.push({ text: 'Validation Errors:', isError: true });
 
             errors.forEach(error => {
-                // Replace field IDs with names in error messages
-                let formattedError = error;
-                fieldRefs.forEach(fieldId => {
-                    const referencedField = graph.nodes.find(n => n.id === fieldId);
-                    if (referencedField) {
-                        formattedError = formattedError.replace(
-                            new RegExp(fieldId, 'g'),
-                            referencedField.name
-                        );
-                    }
-                });
-
-                // Wrap each error message and mark all lines as error text
                 const wrappedError = this.wrapText(
-                    `• ${formattedError}`,
+                    `• ${error}`,
                     textWidth,
                     tempText,
                     true
                 );
-                errorLines.push(...wrappedError);
+                lines.push(...wrappedError);
             });
         }
 
         tempText.remove();
 
-        // Calculate total height needed
-        const totalLines = [
-            ...transformationLines,
-            { text: '', isError: false },
-            ...errorLines
-        ];
-        const boxHeight = (lineHeight * totalLines.length) + padding * 2;
+        // Calculate box dimensions
+        const boxHeight = (lineHeight * lines.length) + padding * 2;
         const boxWidth = maxWidth;
 
         // Position popup
@@ -375,7 +383,7 @@ export class LineageMap {
         if (!svgNode) {
             throw new Error("SVG node is not available.");
         }
-        
+    
         const popupX = pos.x + this.options.tableWidth + 10;
         const popupY = Math.max(
             padding,
@@ -397,20 +405,19 @@ export class LineageMap {
             .attr('rx', 4)
             .attr('filter', 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))');
 
-        // Add text with line breaks
+        // Add text
         const textElement = popup.append('text')
             .attr('x', popupX + padding)
             .attr('y', popupY + padding + 12)
             .style('font-family', 'sans-serif')
             .style('font-size', '12px');
 
-        totalLines.forEach((line, i) => {
+        lines.forEach((line, i) => {
             const tspan = textElement.append('tspan')
                 .attr('x', popupX + padding)
                 .attr('dy', i === 0 ? 0 : lineHeight)
                 .text(line.text);
 
-            // Style all error text consistently
             if (line.isError) {
                 tspan.style('fill', '#ff9800');
             }
@@ -462,8 +469,8 @@ export class LineageMap {
         const inferredEdges: Edge[] = [];
 
         graph.edges.forEach(edge => {
-            const sourceField = graph.nodes.find(n => n.id === edge.source);
-            const targetField = graph.nodes.find(n => n.id === edge.target);
+            const sourceField = graph.nodes.find(n => n.id === edge.source) as FieldNode;
+            const targetField = graph.nodes.find(n => n.id === edge.target) as FieldNode;
 
             if (sourceField?.tableId && targetField?.tableId && sourceField.tableId !== targetField.tableId) {
                 const relationKey = `${sourceField.tableId}->${targetField.tableId}`;
@@ -485,11 +492,11 @@ export class LineageMap {
     getTableLevels(graph: Graph): TableLevel[] {
         const tableDependencies = new Map<string, Set<string>>();
         const tableNodes = graph.nodes.filter(node => node.type === 'table');
-    
+
         tableNodes.forEach(table => {
             tableDependencies.set(table.id, new Set());
         });
-    
+
         const inferredEdges = this.inferTableRelationships(graph);
         inferredEdges.forEach(edge => {
             const dependencySet = tableDependencies.get(edge.target);
@@ -497,18 +504,18 @@ export class LineageMap {
                 dependencySet.add(edge.source);
             }
         });
-    
+
         const levels: TableLevel[] = [];
         const processed = new Set<string>();
         let currentLevel = 0;
-    
+
         while (processed.size < tableNodes.length) {
             const currentLevelTables = Array.from(tableDependencies.entries())
                 .filter(([tableId, deps]) =>
                     !processed.has(tableId) &&
                     Array.from(deps).every(dep => processed.has(dep))
                 );
-    
+
             if (currentLevelTables.length === 0 && processed.size < tableNodes.length) {
                 tableNodes
                     .filter(table => !processed.has(table.id))
@@ -532,10 +539,10 @@ export class LineageMap {
             }
             currentLevel++;
         }
-    
+
         return levels;
     }
-    
+
     getRelatedFields(graph: Graph, fieldId: string) {
         const related = new Set([fieldId]); // Only store fields that feed into the current field
         const visited = new Set();
@@ -556,7 +563,7 @@ export class LineageMap {
         return related;
     }
 
-    toggleTableExpansion(tableId: string) {
+    toggleTableExpansion(tableId: string): void {
         if (this.expandedTables.has(tableId)) {
             this.expandedTables.delete(tableId);
         } else {
@@ -567,7 +574,7 @@ export class LineageMap {
         }
     }
 
-    handleFieldHover(graph: Graph, fieldId: string | null) {
+    handleFieldHover(graph: Graph, fieldId: string | null): void {
         if (fieldId) {
             this.highlightedFields = this.getRelatedFields(graph, fieldId);
         } else {
@@ -579,10 +586,10 @@ export class LineageMap {
     renderHighlights(): void {
         // Update field backgrounds
         this.mainGroup.selectAll<SVGElement, Node>('.field-row')
-            .style('fill', d => 
+            .style('fill', d =>
                 this.highlightedFields.has(d.id) ? '#e3f2fd' : '#ffffff'
             );
-        
+
         // Update edges
         this.mainGroup.selectAll<SVGElement, Edge>('.edge')
             .attr('stroke', (d, i, nodes) => {
@@ -591,8 +598,8 @@ export class LineageMap {
                 const source = element.getAttribute('data-source');
                 const target = element.getAttribute('data-target');
                 if (source && target) {
-                    const isHighlighted = this.highlightedFields.has(source) && 
-                                        this.highlightedFields.has(target);
+                    const isHighlighted = this.highlightedFields.has(source) &&
+                        this.highlightedFields.has(target);
                     return isHighlighted ? '#2196f3' : '#bbbbbb';
                 }
                 return '#bbbbbb';
@@ -603,41 +610,25 @@ export class LineageMap {
                 const source = element.getAttribute('data-source');
                 const target = element.getAttribute('data-target');
                 if (source && target) {
-                    const isHighlighted = this.highlightedFields.has(source) && 
-                                        this.highlightedFields.has(target);
+                    const isHighlighted = this.highlightedFields.has(source) &&
+                        this.highlightedFields.has(target);
                     return isHighlighted ? 2 : 1;
                 }
                 return 1;
             });
     }
-    
-    renderBase(graph: Graph) {
+
+    renderBase(graph: Graph): void {
         this.currentGraph = graph;
-
-        // Auto-expand tables that have connections
-        const connectedTables = new Set();
-        graph.edges.forEach(edge => {
-            const sourceNode = graph.nodes.find(n => n.id === edge.source);
-            const targetNode = graph.nodes.find(n => n.id === edge.target);
-            if (sourceNode && targetNode) {
-                connectedTables.add(sourceNode.tableId);
-                connectedTables.add(targetNode.tableId);
-            }
-        });
-        connectedTables.forEach((tableId: unknown) => {
-            if (typeof tableId === 'string') {
-                this.expandedTables.add(tableId);
-            }
-        });
-
-        const tableLevels = this.getTableLevels(graph);
-        const positions = this.calculatePositions(graph, tableLevels);
-        this.mainGroup.selectAll('*').remove();
-        this.renderNodes(graph, positions);
-        this.setupEventListeners();
+    
+        // Expand all tables by default
+        graph.nodes
+            .filter(node => node.type === 'table')
+            .forEach(node => this.expandedTables.add(node.id));
+        this.render(graph);
     }
 
-    render(graph: Graph) {
+    render(graph: Graph): void {
         // Validate transformations before rendering
         this.validateTransformations(graph);
 
@@ -651,7 +642,7 @@ export class LineageMap {
         this.setupEventListeners();
     }
 
-    calculatePositions(graph: Graph, tableLevels: TableLevel[]) {
+    calculatePositions(graph: Graph, tableLevels: TableLevel[]): Map<string, Position> {
         const positions = new Map();
         const {
             tableWidth,
@@ -676,7 +667,7 @@ export class LineageMap {
             if (!this.expandedTables.has(tableId)) {
                 return tableHeight;
             }
-            const fieldCount = graph.nodes.filter(n => n.tableId === tableId).length;
+            const fieldCount = graph.nodes.filter(n => n.type === "field" && n.tableId === tableId).length;
             return tableHeight + (fieldCount * (fieldHeight + fieldSpacing));
         };
 
@@ -710,7 +701,7 @@ export class LineageMap {
 
                 // Position fields if table is expanded
                 if (this.expandedTables.has(tableId)) {
-                    const fields = graph.nodes.filter(n => n.tableId === tableId);
+                    const fields = graph.nodes.filter(n => n.type === "field" && n.tableId === tableId);
                     fields.forEach((field, index) => {
                         positions.set(field.id, {
                             x: levelX,
@@ -736,23 +727,21 @@ export class LineageMap {
         return positions;
     }
 
-    renderEdges(graph: Graph, positions: Map<string, Position>) {
+    renderEdges(graph: Graph, positions: Map<string, Position>): void {
         const edges = this.showTableRelationships ?
             [...this.inferTableRelationships(graph), ...graph.edges] :
             graph.edges;
-    
+
         // Group edges by source and target tables
         const edgesByTables = new Map<string, Edge[]>();
         edges.forEach(edge => {
-            if (edge.type === 'table-table') return;
-        
-            const sourceNode = graph.nodes.find(n => n.id === edge.source);
-            const targetNode = graph.nodes.find(n => n.id === edge.target);
+            const sourceNode = graph.nodes.find(n => n.id === edge.source) as FieldNode;
+            const targetNode = graph.nodes.find(n => n.id === edge.target) as FieldNode;
             if (!sourceNode?.tableId || !targetNode?.tableId) return;
-        
-            if (!this.expandedTables.has(sourceNode.tableId) || 
+
+            if (!this.expandedTables.has(sourceNode.tableId) ||
                 !this.expandedTables.has(targetNode.tableId)) return;
-    
+
             const tableKey = `${sourceNode.tableId}-${targetNode.tableId}`;
             if (!edgesByTables.has(tableKey)) {
                 edgesByTables.set(tableKey, []);
@@ -762,43 +751,43 @@ export class LineageMap {
                 tableEdges.push(edge);
             }
         });
-    
+
         // Calculate control points for each table pair
         edgesByTables.forEach((tableEdges, tableKey) => {
             const tablePair = tableKey.split('-');
             if (tablePair.length !== 2) return;
-            
+
             const [sourceTableId, targetTableId] = tablePair;
             const sourceTablePos = positions.get(sourceTableId);
             const targetTablePos = positions.get(targetTableId);
-    
+
             if (!sourceTableId || !targetTableId || !sourceTablePos || !targetTablePos) return;
-    
+
             // Calculate horizontal distance between tables
             const horizontalDistance = targetTablePos.x - sourceTablePos.x;
-            
+
             // Draw edges
             tableEdges.forEach((edge: Edge) => {
-                // Since Edge interface guarantees source and target are strings, we can safely use them
                 const sourcePos = positions.get(edge.source);
                 const targetPos = positions.get(edge.target);
-    
+
                 if (!sourcePos || !targetPos) return;
-    
+
                 // Create the path element with guaranteed non-null source and target
                 const path = this.mainGroup.append('path')
                     .attr('class', 'edge')
-                    .attr('data-source', edge.source as string) // Type assertion since we know it's defined
-                    .attr('data-target', edge.target as string) // Type assertion since we know it's defined
+                    .attr('data-source', edge.source as string)
+                    .attr('data-target', edge.target as string)
                     .attr('d', () => {
                         const start = [sourcePos.x + this.options.tableWidth, sourcePos.y + this.options.fieldHeight / 2];
                         const end = [targetPos.x, targetPos.y + this.options.fieldHeight / 2];
-                        
+
                         // Use fixed control point distances based on horizontal distance
-                        const curveOffset = horizontalDistance / 3;
+                        const maxCurveOffset = 100; // Define a sensible max curve offset
+                        const curveOffset = Math.min(horizontalDistance / 3, maxCurveOffset);
                         const ctrl1 = [start[0] + curveOffset, start[1]];
                         const ctrl2 = [end[0] - curveOffset, end[1]];
-    
+
                         return `M ${start[0]},${start[1]} 
                                 C ${ctrl1[0]},${ctrl1[1]} 
                                   ${ctrl2[0]},${ctrl2[1]} 
@@ -811,7 +800,7 @@ export class LineageMap {
         });
     }
 
-    renderNodes(graph: Graph, positions: Map<string, Position>) {
+    renderNodes(graph: Graph, positions: Map<string, Position>): void {
         // Create node groups
         const nodes = this.mainGroup
             .selectAll<SVGGElement, Node>('.node')
@@ -823,14 +812,14 @@ export class LineageMap {
                 const pos = positions.get(d.id);
                 return pos ? `translate(${pos.x},${pos.y})` : '';
             });
-    
+
         // Render tables
         nodes.filter((d: Node) => d.type === 'table')
             .each((d: Node, i: number, nodes: SVGGElement[] | ArrayLike<SVGGElement>) => {
                 const node = d3.select<SVGGElement, Node>(nodes[i]);
                 this.renderTable(node, d);
             });
-    
+
         // Render fields for expanded tables
         nodes.filter((d: Node) => d.type === 'field' && this.expandedTables.has(d.tableId))
             .each((d: Node, i: number, nodes: SVGGElement[] | ArrayLike<SVGGElement>) => {
@@ -838,10 +827,11 @@ export class LineageMap {
                 this.renderField(node, d);
             });
     }
-    
+
 
     setupEventListeners(): void {
         this.mainGroup.selectAll('.table-header')
+            .style('cursor', 'pointer')
             .on('click', (event: any, d: unknown) => this.toggleTableExpansion((d as Node).id));
     
         this.mainGroup.selectAll('.field-group')
@@ -870,11 +860,12 @@ export class LineageMap {
         });
     }
 
-    destroy() {
+
+    destroy(): void {
         // Remove D3 events and clean up
         if (this.svg) {
-          this.svg.selectAll('*').remove();
-          this.svg.remove();
+            this.svg.selectAll('*').remove();
+            this.svg.remove();
         }
         // Clear any stored state
         this.expandedTables.clear();
@@ -882,5 +873,5 @@ export class LineageMap {
         this.positions.clear();
         this.validationErrors.clear();
         this.currentGraph = null;
-      }
+    }
 }

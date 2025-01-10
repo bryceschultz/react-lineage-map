@@ -16,7 +16,8 @@ export default function App() {
             fieldHeight: 20,
             fieldSpacing: 4,
             levelPadding: 100,
-            verticalPadding: 50
+            verticalPadding: 50,
+            popUpWidth: 300,
           }}
         />
       </div>

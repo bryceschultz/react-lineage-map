@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { LineageMap } from '../LineageMap';
-import { LineageMapProps } from '../types';
+import { Graph, LineageMapProps } from '../types';
 
 export const LineageMapComponent: React.FC<LineageMapProps> = ({
   data,
@@ -11,6 +11,13 @@ export const LineageMapComponent: React.FC<LineageMapProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const lineageMapRef = useRef<LineageMap | null>(null);
+  data.edges.forEach(((edge, index) => edge.id = index.toString()))
+  data.nodes.forEach(((node) => {
+    if (node.type === "field") {
+      node.tableId = node.id.split(":")[0];
+    }
+  }))
+  const graph = data as Graph;
 
   useEffect(() => {
     // Skip initialization if we already have an instance
@@ -29,7 +36,7 @@ export const LineageMapComponent: React.FC<LineageMapProps> = ({
 
       lineageMapRef.current = new LineageMap(containerRef.current, defaultOptions);
       (window as any).lineageMap = lineageMapRef.current;
-      lineageMapRef.current.render(data);
+      lineageMapRef.current.renderBase(graph);
     }
 
     return () => {
