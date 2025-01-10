@@ -13,9 +13,9 @@ adding a lineage component
 const graph: Graph = {
     // table id's can take on whatever format desired, an easy standard is taking 
     // the table name and replacing spaces with _'s.
-    // field id's must be in format {tablename}:{fieldname}, where tablename references 
-    // the tables id and fieldname can be whatever format desired, whatever approach you 
-    // chose to replace spaces for the table id's can be repeated for the field id's
+    // field id's must be in format {table}:{field}, where table represents
+    // the tables id and field can be whatever format desired, whatever approach you 
+    // chose to replace spaces for the table id's can be repeated for the field
   nodes: [
     // Table A
     { id: 'table_A', type: 'table', name: 'Table A' },
