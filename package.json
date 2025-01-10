@@ -1,14 +1,19 @@
 {
   "name": "react-lineage-map",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Build out field level lineage mappings, visualizations, and transformations using react",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
   "types": "dist/types/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bryceschultz/react-lineage-map.git"
+  },
   "files": [
     "dist",
     "README.md"
   ],
+  "homepage": "https://github.com/bryceschultz/react-lineage-map#readme",
   "scripts": {
     "build": "rollup -c",
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -24,7 +29,7 @@
     "d3"
   ],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "type": "module",
   "devDependencies": {
     "@babel/core": "^7.26.0",
