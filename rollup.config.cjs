@@ -26,6 +26,9 @@ module.exports = [
       commonjs(),
       typescript({ 
         tsconfig: './tsconfig.json',
+        declaration: true,
+        declarationDir: 'dist/types',
+        exclude: ['**/__tests__', '**/*.test.ts', '**/*.test.tsx']
       }),
       babel({
         exclude: 'node_modules/**',
@@ -35,8 +38,8 @@ module.exports = [
     external: ['react', 'react-dom', 'd3'],
   },
   {
-    input: 'dist/types/index.d.ts',
+    input: 'src/index.ts',
     output: [{ file: 'dist/index.d.ts', format: 'esm' }],
-    plugins: [dts.dts()],
+    plugins: [dts.default()],
   },
 ];

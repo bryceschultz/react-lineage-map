@@ -15,7 +15,8 @@
   ],
   "homepage": "https://github.com/bryceschultz/react-lineage-map#readme",
   "scripts": {
-    "build": "rollup -c",
+    "clean": "rm -rf dist",
+    "build": "npm run clean && rollup -c",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "peerDependencies": {
