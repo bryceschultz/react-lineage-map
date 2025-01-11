@@ -1,14 +1,14 @@
-import React, { useEffect, useRef } from 'react';
+import React, { JSX, useEffect, useRef } from 'react';
 import { LineageMap } from '../LineageMap';
 import { Graph, LineageMapProps } from '../types';
 
-export const LineageMapComponent: React.FC<LineageMapProps> = ({
+export const LineageMapComponent = ({
   data,
   width = '100%',
   height = '800px',
   options = {},
   className = '',
-}) => {
+}: LineageMapProps): JSX.Element => {
   const containerRef = useRef<HTMLDivElement>(null);
   const lineageMapRef = useRef<LineageMap | null>(null);
   data.edges.forEach(((edge, index) => edge.id = index.toString()))
@@ -20,7 +20,6 @@ export const LineageMapComponent: React.FC<LineageMapProps> = ({
   const graph = data as Graph;
 
   useEffect(() => {
-    // Skip initialization if we already have an instance
     if (containerRef.current && !lineageMapRef.current) {
       const defaultOptions = {
         width,
@@ -41,7 +40,6 @@ export const LineageMapComponent: React.FC<LineageMapProps> = ({
 
     return () => {
       if (lineageMapRef.current) {
-        // Add a proper cleanup method to LineageMap class
         lineageMapRef.current.destroy();
         lineageMapRef.current = null;
       }

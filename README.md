@@ -10,7 +10,7 @@ npm install react-lineage-map
 
 adding a lineage component
 ```
-const graph: Graph = {
+const graph: GraphProp = {
     // table id's can take on whatever format desired, an easy standard is taking 
     // the table name and replacing spaces with _'s.
     // field id's must be in format {table}:{field}, where table represents
