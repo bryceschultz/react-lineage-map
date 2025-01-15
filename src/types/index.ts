@@ -61,6 +61,7 @@ export interface LineageMapOptions {
   levelPadding?: number;
   verticalPadding?: number;
   popUpWidth?: number;
+  maxCurveOffset?: number;
 }
 
 export interface LineageMapProps {

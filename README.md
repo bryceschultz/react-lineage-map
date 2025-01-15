@@ -4,12 +4,14 @@ Build out field level lineage mappings, visualizations, and transformations usin
 
 ## Getting Started
 installation
-```
+```sh
 npm install react-lineage-map
 ```
 
 adding a lineage component
-```
+```typescript
+import { GraphProp, LineageMapComponent } from "react-lineage-map";
+
 const graph: GraphProp = {
     // table id's can take on whatever format desired, an easy standard is taking 
     // the table name and replacing spaces with _'s.
@@ -48,7 +50,7 @@ const graph: GraphProp = {
   ]
 };
 
-const App = () => {
+export default function App() {
   return (
     <div style={{ padding: '20px' }}>
       <h1>Lineage Map Example</h1>
@@ -57,13 +59,14 @@ const App = () => {
           data={graph}
           height="100%"
           options={{
-            tableWidth: 150,
+            tableWidth: 250,
             tableHeight: 40,
             fieldHeight: 20,
             fieldSpacing: 4,
             levelPadding: 100,
             verticalPadding: 50,
             popUpWidth: 300,
+            maxCurveOffset: 80,
           }}
         />
       </div>

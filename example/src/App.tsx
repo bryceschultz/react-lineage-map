@@ -11,13 +11,14 @@ export default function App() {
           data={graph}
           height="100%"
           options={{
-            tableWidth: 150,
+            tableWidth: 250,
             tableHeight: 40,
             fieldHeight: 20,
             fieldSpacing: 4,
             levelPadding: 100,
             verticalPadding: 50,
             popUpWidth: 300,
+            maxCurveOffset: 80,
           }}
         />
       </div>

@@ -26,7 +26,8 @@ export class LineageMap {
             fieldSpacing: options.fieldSpacing || 4,
             levelPadding: options.levelPadding || 100,
             verticalPadding: options.verticalPadding || 50,
-            popUpWidth: options.popUpWidth || 300
+            popUpWidth: options.popUpWidth || 300,
+            maxCurveOffset: options.maxCurveOffset || 100
         };
 
         this.init();
@@ -104,50 +105,96 @@ export class LineageMap {
 
     private renderTable(node: d3.Selection<SVGGElement, Node, null, undefined>, data: Node): void {
         const { tableWidth, tableHeight } = this.options;
-
-        // Add table background
+        
+        // Add drop shadow filter
+        const defs = node.append('defs');
+        defs.append('filter')
+            .attr('id', 'dropShadow')
+            .append('feDropShadow')
+            .attr('dx', '0')
+            .attr('dy', '2')
+            .attr('stdDeviation', '3')
+            .attr('flood-opacity', '0.15');
+    
+        // Add table background with shadow
         node.append('rect')
             .attr('width', tableWidth)
             .attr('height', tableHeight)
             .attr('fill', '#ffffff')
-            .attr('stroke', '#cccccc')
-            .attr('rx', 4);
-
-        // Add table header
+            .attr('stroke', '#E2E8F0')
+            .attr('stroke-width', '1')
+            .attr('rx', 6)
+            .style('filter', 'url(#dropShadow)');
+    
+        // Add table header with gradient
+        const headerGradient = defs.append('linearGradient')
+            .attr('id', 'headerGradient')
+            .attr('x1', '0%')
+            .attr('y1', '0%')
+            .attr('x2', '0%')
+            .attr('y2', '100%');
+        
+        headerGradient.append('stop')
+            .attr('offset', '0%')
+            .attr('stop-color', '#F8FAFC');
+        
+        headerGradient.append('stop')
+            .attr('offset', '100%')
+            .attr('stop-color', '#F1F5F9');
+    
         node.append('rect')
             .attr('class', 'table-header clickable-area')
             .attr('width', tableWidth)
             .attr('height', tableHeight)
-            .attr('fill', '#f5f5f5')
-            .attr('stroke', '#cccccc')
-            .attr('rx', 4);
-
+            .attr('fill', 'url(#headerGradient)')
+            .attr('stroke', '#E2E8F0')
+            .attr('rx', 6);
+    
         // Add table name
         node.append('text')
             .attr('class', 'clickable-area')
-            .attr('x', 10)
+            .attr('x', 16)
             .attr('y', tableHeight / 2)
             .attr('dy', '0.35em')
-            .attr('fill', '#333333')
-            .style('font-family', 'sans-serif')
-            .style('font-size', '12px')
+            .attr('fill', '#1E293B')
+            .style('font-family', '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif')
+            .style('font-size', '13px')
+            .style('font-weight', '500')
             .text(data.name)
             .style('pointer-events', 'none');
-
+    
         // Add expansion indicator
         const isExpanded = this.expandedTables.has(data.id);
+        const buttonSize = 20;
+        const buttonX = tableWidth - buttonSize - 12; // 12px from right edge
+        const buttonY = (tableHeight - buttonSize) / 2;
+    
+        node.append('rect')
+            .attr('class', 'expansion-button')
+            .attr('x', buttonX)
+            .attr('y', buttonY)
+            .attr('width', buttonSize)
+            .attr('height', buttonSize)
+            .attr('rx', 4)
+            .attr('fill', '#F8FAFC')
+            .attr('stroke', '#CBD5E1')
+            .attr('stroke-width', '1')
+            .style('cursor', 'pointer');
+    
         node.append('text')
             .attr('class', 'clickable-area')
-            .attr('x', tableWidth - 20)
+            .attr('x', buttonX + buttonSize / 2)
             .attr('y', tableHeight / 2)
+            .attr('text-anchor', 'middle')
             .attr('dy', '0.35em')
-            .attr('fill', '#666666')
-            .style('font-family', 'sans-serif')
-            .style('font-size', '12px')
+            .attr('fill', '#64748B')
+            .style('font-family', '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif')
+            .style('font-size', '14px')
+            .style('font-weight', '500')
             .text(isExpanded ? '−' : '+')
             .style('pointer-events', 'none');
     }
-
+    
     private renderField(node: d3.Selection<SVGGElement, Node, null, undefined>, data: Node): void {
         const { tableWidth, fieldHeight } = this.options;
 
@@ -783,8 +830,7 @@ export class LineageMap {
                         const end = [targetPos.x, targetPos.y + this.options.fieldHeight / 2];
 
                         // Use fixed control point distances based on horizontal distance
-                        const maxCurveOffset = 100; // Define a sensible max curve offset
-                        const curveOffset = Math.min(horizontalDistance / 3, maxCurveOffset);
+                        const curveOffset = Math.min(horizontalDistance / 3, this.options.maxCurveOffset);
                         const ctrl1 = [start[0] + curveOffset, start[1]];
                         const ctrl2 = [end[0] - curveOffset, end[1]];
 
