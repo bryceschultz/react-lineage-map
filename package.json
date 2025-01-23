@@ -1,6 +1,6 @@
 {
   "name": "react-lineage-map",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Build out field level lineage mappings, visualizations, and transformations using react",
   "main": "dist/cjs/index.js",
   "types": "dist/index.d.ts",

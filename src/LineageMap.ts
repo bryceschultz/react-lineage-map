@@ -1,11 +1,12 @@
 import * as d3 from 'd3';
-import { LineageMapOptions, Position, Graph, Node, Edge, TableLevel, FieldNode } from "./types/index"
+import { LineageMapOptions, Position, Graph, Node, Edge, TableLevel, FieldNode, TableNode } from "./types/index"
 
 export class LineageMap {
     private container: HTMLElement;
     private options: Required<LineageMapOptions>;
     private expandedTables: Set<string> = new Set();
-    private highlightedFields: Set<string> = new Set();
+    private highlightedRelatedFields: Set<string> = new Set();
+    private highlightedJoinedByFields: Set<string> = new Set();
     private showTableRelationships: boolean = false;
     private selectedField: string | null = null;
     private positions: Map<string, Position> = new Map();
@@ -207,7 +208,7 @@ export class LineageMap {
             .attr('class', 'field-row')
             .attr('width', tableWidth)
             .attr('height', fieldHeight)
-            .attr('fill', this.highlightedFields.has(data.id) ? '#e3f2fd' : '#ffffff')
+            .attr('fill', this.highlightedRelatedFields.has(data.id) ? '#e3f2fd' : '#ffffff')
             .attr('stroke', '#eeeeee')
             .style('cursor', 'pointer');
 
@@ -537,31 +538,31 @@ export class LineageMap {
     }
 
     getTableLevels(graph: Graph): TableLevel[] {
-        const tableDependencies = new Map<string, Set<string>>();
+        const upstreamTableDependencies = new Map<string, Set<string>>();
         const tableNodes = graph.nodes.filter(node => node.type === 'table');
-
+    
         tableNodes.forEach(table => {
-            tableDependencies.set(table.id, new Set());
+            upstreamTableDependencies.set(table.id, new Set());
         });
-
-        const inferredEdges = this.inferTableRelationships(graph);
+    
+        const inferredEdges: Edge[] = this.inferTableRelationships(graph);
         inferredEdges.forEach(edge => {
-            const dependencySet = tableDependencies.get(edge.target);
-            if (dependencySet) {
-                dependencySet.add(edge.source);
+            const upstreamDeps = upstreamTableDependencies.get(edge.source);
+            if (upstreamDeps) {
+                upstreamDeps.add(edge.target);
             }
         });
 
         const levels: TableLevel[] = [];
         const processed = new Set<string>();
         let currentLevel = 0;
-
+        let maxLevel = 0;
         while (processed.size < tableNodes.length) {
-            const currentLevelTables = Array.from(tableDependencies.entries())
-                .filter(([tableId, deps]) =>
-                    !processed.has(tableId) &&
-                    Array.from(deps).every(dep => processed.has(dep))
-                );
+            const currentLevelTables = Array.from(upstreamTableDependencies.entries())
+                .filter(([tableId, deps]) => (
+                        !processed.has(tableId) &&
+                        Array.from(deps).every(dep => processed.has(dep))
+                    ));
 
             if (currentLevelTables.length === 0 && processed.size < tableNodes.length) {
                 tableNodes
@@ -570,7 +571,7 @@ export class LineageMap {
                         levels.push({
                             id: table.id,
                             level: currentLevel,
-                            dependencies: Array.from(tableDependencies.get(table.id) || [])
+                            dependencies: Array.from(upstreamTableDependencies.get(table.id) || [])
                         });
                         processed.add(table.id);
                     });
@@ -581,10 +582,15 @@ export class LineageMap {
                         level: currentLevel,
                         dependencies: Array.from(deps)
                     });
+                    if (currentLevel > maxLevel) maxLevel = currentLevel
                     processed.add(tableId);
                 });
             }
             currentLevel++;
+        }
+
+        for (let i = 0; i < levels.length; i++) {
+            levels[i].level = maxLevel - levels[i].level;
         }
 
         return levels;
@@ -621,11 +627,29 @@ export class LineageMap {
         }
     }
 
+    getJoinedByFields(graph: Graph) {
+        graph.nodes
+        .filter((node): node is TableNode => 
+            node.type === 'table' && 
+            node.joinedBy !== undefined
+        )
+        .forEach(table => {
+            graph.nodes
+                .filter(n => n.type === 'field' && table.joinedBy && table.joinedBy.includes(n.id))
+                .forEach(field => {
+                    console.log('Adding field to highlights:', field);
+                    this.highlightedJoinedByFields.add(field.id);
+            });
+        });
+    }
+
     handleFieldHover(graph: Graph, fieldId: string | null): void {
         if (fieldId) {
-            this.highlightedFields = this.getRelatedFields(graph, fieldId);
+            this.highlightedRelatedFields = this.getRelatedFields(graph, fieldId);
+            this.getJoinedByFields(graph);
         } else {
-            this.highlightedFields.clear();
+            this.highlightedJoinedByFields.clear();
+            this.highlightedRelatedFields.clear();
         }
         this.renderHighlights();
     }
@@ -633,9 +657,17 @@ export class LineageMap {
     renderHighlights(): void {
         // Update field backgrounds
         this.mainGroup.selectAll<SVGElement, Node>('.field-row')
-            .style('fill', d =>
-                this.highlightedFields.has(d.id) ? '#e3f2fd' : '#ffffff'
-            );
+            .style('fill', d => {
+                // highlight joinedBy fields in purple
+                if (this.highlightedJoinedByFields.has(d.id)) {
+                    return '#dacdfd'; // Purple
+                }
+                // highlight related fields in blue
+                if (this.highlightedRelatedFields.has(d.id)) {
+                    return '#e3f2fd'; // Blue
+                }
+                return '#ffffff'; // Default background
+        });
 
         // Update edges
         this.mainGroup.selectAll<SVGElement, Edge>('.edge')
@@ -645,8 +677,8 @@ export class LineageMap {
                 const source = element.getAttribute('data-source');
                 const target = element.getAttribute('data-target');
                 if (source && target) {
-                    const isHighlighted = this.highlightedFields.has(source) &&
-                        this.highlightedFields.has(target);
+                    const isHighlighted = this.highlightedRelatedFields.has(source) &&
+                        this.highlightedRelatedFields.has(target);
                     return isHighlighted ? '#2196f3' : '#bbbbbb';
                 }
                 return '#bbbbbb';
@@ -657,8 +689,8 @@ export class LineageMap {
                 const source = element.getAttribute('data-source');
                 const target = element.getAttribute('data-target');
                 if (source && target) {
-                    const isHighlighted = this.highlightedFields.has(source) &&
-                        this.highlightedFields.has(target);
+                    const isHighlighted = this.highlightedRelatedFields.has(source) &&
+                        this.highlightedRelatedFields.has(target);
                     return isHighlighted ? 2 : 1;
                 }
                 return 1;
@@ -915,7 +947,8 @@ export class LineageMap {
         }
         // Clear any stored state
         this.expandedTables.clear();
-        this.highlightedFields.clear();
+        this.highlightedRelatedFields.clear();
+        this.highlightedJoinedByFields.clear();
         this.positions.clear();
         this.validationErrors.clear();
         this.currentGraph = null;
