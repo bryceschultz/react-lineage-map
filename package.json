@@ -1,12 +1,13 @@
 {
   "name": "react-lineage-map",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Build out field level lineage mappings, visualizations, and transformations using react",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
   "exports": {
     "import": "./dist/esm/index.js",
-    "require": "./dist/cjs/index.js"
+    "require": "./dist/cjs/index.js",
+    "types": "./dist/index.d.ts"
   },
   "types": "dist/index.d.ts",
   "repository": {
