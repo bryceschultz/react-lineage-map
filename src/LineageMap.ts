@@ -788,22 +788,34 @@ export class LineageMap {
         this.setupEventListeners();
     }
 
-
-    // Calculate average Y position of incoming edges for the first table in a level
-    getAverageIncomingY = (graph: Graph, tableId: string, positions: Map<string, Position>): number | null => {
+    getOptimalTableY = (graph: Graph, tableId: string, positions: Map<string, Position>): number | null => {
         const incomingEdges = graph.edges.filter(e => e.target.startsWith(tableId));
         if (incomingEdges.length === 0) return null;
-        let totalY = 0;
-        const edgeSourceSet = new Set();
-
+        
+        const edgeSourceSet: Set<string> = new Set();
+        let totalY: number = 0;
+        let minY: number | null = null;
         for (const edge of incomingEdges) {
             if (!edgeSourceSet.has(edge.source)) {
                 edgeSourceSet.add(edge.source);
                 const fieldPositionY = positions.get(edge.source)?.y;
-                if (fieldPositionY) totalY += fieldPositionY;
+                if (fieldPositionY) {
+                    totalY += fieldPositionY;
+                    if (minY === null || fieldPositionY < minY) {
+                        minY = fieldPositionY;
+                    }
+                }
             }
         }
-        return totalY / edgeSourceSet.size;
+        // if theres only 1 table feeding into this table
+        // we dont want to have this tables y position start at the average
+        // incoming y position, so we put this tables y position to the min
+        // incoming y position.
+        if (edgeSourceSet.size === 1) {
+            return minY;
+        } else {
+            return totalY / edgeSourceSet.size;
+        }
     };
 
     calculatePositions(graph: Graph, tableLevels: TableLevel[]): Map<string, Position> {
@@ -859,7 +871,7 @@ export class LineageMap {
                 // Determine Y position for the table
                 let yPosition = currentY + verticalPadding;
                 if (idx === 0) {
-                    const averagingIncomingEdgeY = this.getAverageIncomingY(graph, tableId, positions);
+                    const averagingIncomingEdgeY = this.getOptimalTableY(graph, tableId, positions);
                     if (averagingIncomingEdgeY != null) {
                         yPosition = averagingIncomingEdgeY;
                     }
