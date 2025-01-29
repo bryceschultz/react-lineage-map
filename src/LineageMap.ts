@@ -6,7 +6,6 @@ export class LineageMap {
     private options: Required<LineageMapOptions>;
     private expandedTables: Set<string> = new Set();
     private highlightedRelatedFields: Set<string> = new Set();
-    private highlightedJoinedByFields: Set<string> = new Set();
     private showTableRelationships: boolean = false;
     private selectedField: string | null = null;
     private positions: Map<string, Position> = new Map();
@@ -109,15 +108,16 @@ export class LineageMap {
         
         // Add drop shadow filter
         const defs = node.append('defs');
+        const dropShadowId = `dropShadow-${data.id}`;
         defs.append('filter')
-            .attr('id', 'dropShadow')
+            .attr('id', dropShadowId)
             .append('feDropShadow')
             .attr('dx', '0')
             .attr('dy', '2')
             .attr('stdDeviation', '3')
             .attr('flood-opacity', '0.15');
     
-        // Add table background with shadow
+        // Add table background
         node.append('rect')
             .attr('width', tableWidth)
             .attr('height', tableHeight)
@@ -125,11 +125,12 @@ export class LineageMap {
             .attr('stroke', '#E2E8F0')
             .attr('stroke-width', '1')
             .attr('rx', 6)
-            .style('filter', 'url(#dropShadow)');
+            .style('filter', `url(#${dropShadowId})`);
     
         // Add table header with gradient
+        const headerGradientId = `headerGradient-${data.id}`;
         const headerGradient = defs.append('linearGradient')
-            .attr('id', 'headerGradient')
+            .attr('id', headerGradientId)
             .attr('x1', '0%')
             .attr('y1', '0%')
             .attr('x2', '0%')
@@ -147,9 +148,10 @@ export class LineageMap {
             .attr('class', 'table-header clickable-area')
             .attr('width', tableWidth)
             .attr('height', tableHeight)
-            .attr('fill', 'url(#headerGradient)')
+            .attr('fill', `url(#${headerGradientId})`)
             .attr('stroke', '#E2E8F0')
-            .attr('rx', 6);
+            .attr('rx', 6)
+            .attr('clip-path', `path('M0,0 h${tableWidth} v${tableHeight} h-${tableWidth} Z')`);
     
         // Add table name
         node.append('text')
@@ -164,38 +166,115 @@ export class LineageMap {
             .text(data.name)
             .style('pointer-events', 'none');
     
-        // Add expansion indicator
-        const isExpanded = this.expandedTables.has(data.id);
-        const buttonSize = 20;
-        const buttonX = tableWidth - buttonSize - 12; // 12px from right edge
-        const buttonY = (tableHeight - buttonSize) / 2;
+        // Add info button only if there's a note
+        if ('note' in data && data.note) {
+            const infoButtonSize = 20;
+            const infoButtonX = tableWidth - infoButtonSize - 12;
+            const infoButtonY = (tableHeight - infoButtonSize) / 2;
     
-        node.append('rect')
-            .attr('class', 'expansion-button')
-            .attr('x', buttonX)
-            .attr('y', buttonY)
-            .attr('width', buttonSize)
-            .attr('height', buttonSize)
-            .attr('rx', 4)
-            .attr('fill', '#F8FAFC')
-            .attr('stroke', '#CBD5E1')
-            .attr('stroke-width', '1')
-            .style('cursor', 'pointer');
+            const infoButton = node.append('g')
+                .attr('class', 'table-info-button')
+                .attr('transform', `translate(${infoButtonX}, ${infoButtonY})`)
+                .style('cursor', 'pointer');
     
-        node.append('text')
-            .attr('class', 'clickable-area')
-            .attr('x', buttonX + buttonSize / 2)
-            .attr('y', tableHeight / 2)
-            .attr('text-anchor', 'middle')
-            .attr('dy', '0.35em')
-            .attr('fill', '#64748B')
-            .style('font-family', '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif')
-            .style('font-size', '14px')
-            .style('font-weight', '500')
-            .text(isExpanded ? '−' : '+')
-            .style('pointer-events', 'none');
+            infoButton.append('rect')
+                .attr('width', infoButtonSize)
+                .attr('height', infoButtonSize)
+                .attr('rx', 4)
+                .attr('fill', '#F8FAFC')
+                .attr('stroke', '#CBD5E1')
+                .attr('stroke-width', '1');
+    
+            infoButton.append('text')
+                .attr('x', infoButtonSize / 2)
+                .attr('y', infoButtonSize / 2)
+                .attr('text-anchor', 'middle')
+                .attr('dy', '0.35em')
+                .attr('fill', '#64748B')
+                .style('font-family', '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif')
+                .style('font-size', '12px')
+                .style('font-weight', '500')
+                .text('ⓘ')
+                .style('pointer-events', 'none');
+        }
     }
-    
+
+    private showTableInfoPopup(table: TableNode): void {
+        this.hideTransformationPopup(); // Hide any existing popups
+
+        const pos = this.positions.get(table.id);
+        if (!pos) return;
+
+        // Create popup container
+        const popup = this.mainGroup.append('g')
+            .attr('class', 'table-info-popup');
+
+        const padding = 10;
+        const maxWidth = this.options.popUpWidth;
+        const lineHeight = 20;
+        const textWidth = maxWidth - (padding * 2);
+
+        // Create temporary text element for measurements
+        const tempText = popup.append('text')
+            .style('font-family', 'sans-serif')
+            .style('font-size', '12px');
+
+        const lines: { text: string; isError: boolean }[] = [];
+
+        // Add note if it exists
+        if (table.note) {
+            lines.push(...this.wrapText(
+                `Note: ${table.note}`,
+                textWidth,
+                tempText,
+                false
+            ));
+        }
+
+        tempText.remove();
+
+        // Calculate box dimensions
+        const boxHeight = (lineHeight * lines.length) + padding * 2;
+        const boxWidth = maxWidth;
+
+        // Position popup
+        const popupX = pos.x + this.options.tableWidth + 10;
+        const popupY = Math.max(
+            padding,
+            Math.min(
+                pos.y - boxHeight / 2,
+                this.svg.node()?.getBoundingClientRect().height! - boxHeight - padding
+            )
+        );
+
+        // Add semi-transparent overlay
+        popup.append('rect')
+            .attr('class', 'popup-overlay')
+            .attr('x', popupX)
+            .attr('y', popupY)
+            .attr('width', boxWidth)
+            .attr('height', boxHeight)
+            .attr('fill', 'rgba(255, 255, 255, 0.95)')
+            .attr('stroke', '#dee2e6')
+            .attr('rx', 4)
+            .attr('filter', 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))');
+
+        // Add text
+        const textElement = popup.append('text')
+            .attr('x', popupX + padding)
+            .attr('y', popupY + padding + 12)
+            .style('font-family', 'sans-serif')
+            .style('font-size', '12px');
+
+        lines.forEach((line, i) => {
+            textElement.append('tspan')
+                .attr('x', popupX + padding)
+                .attr('dy', i === 0 ? 0 : lineHeight)
+                .text(line.text)
+                .style('fill', line.isError ? '#ff9800' : '#1E293B');
+        });
+    }
+
     private renderField(node: d3.Selection<SVGGElement, Node, null, undefined>, data: Node): void {
         const { tableWidth, fieldHeight } = this.options;
 
@@ -275,7 +354,7 @@ export class LineageMap {
             this.selectedField = fieldId;
             this.showTransformationPopup(fieldNode, graph);
         }
-    }    
+    }
 
     wrapText(
         text: string,
@@ -342,17 +421,17 @@ export class LineageMap {
 
     showTransformationPopup(field: FieldNode, graph: Graph) {
         this.hideTransformationPopup();
-
+    
         if (!field.transformation && !field.note) return;
-
+    
         const pos = this.getFieldPosition(field.id);
         if (!pos) return;
-
+    
         // Create popup container
         const popup = this.mainGroup.append('g')
             .attr('class', 'transformation-popup');
-
-        const padding = 10;
+    
+        const padding = 16;
         const maxWidth = this.options.popUpWidth;
         const lineHeight = 20;
         const textWidth = maxWidth - (padding * 2);
@@ -361,9 +440,9 @@ export class LineageMap {
         const tempText = popup.append('text')
             .style('font-family', 'sans-serif')
             .style('font-size', '12px');
-    
+
         const lines: { text: string; isError: boolean }[] = [];
-    
+
         // Add transformation if it exists
         if (field.transformation) {
             let transformationText = field.transformation;
@@ -379,20 +458,20 @@ export class LineageMap {
                     );
                 }
             });
-    
+
             lines.push(...this.wrapText(
                 `Transformation: ${transformationText}`,
                 textWidth,
                 tempText,
                 false
             ));
-            
+
             // Add a blank line if both transformation and note exist
             if (field.note) {
                 lines.push({ text: '', isError: false });
             }
         }
-    
+
         // Add note if it exists
         if (field.note) {
             lines.push(...this.wrapText(
@@ -402,7 +481,7 @@ export class LineageMap {
                 false
             ));
         }
-    
+
         // Add error messages if they exist
         const errors = this.validationErrors.get(field.id);
         if (errors && errors.length > 0) {
@@ -427,20 +506,15 @@ export class LineageMap {
         const boxWidth = maxWidth;
 
         // Position popup
-        const svgNode = this.svg.node();
-        if (!svgNode) {
-            throw new Error("SVG node is not available.");
-        }
-    
         const popupX = pos.x + this.options.tableWidth + 10;
         const popupY = Math.max(
             padding,
             Math.min(
                 pos.y - boxHeight / 2,
-                svgNode.getBoundingClientRect().height - boxHeight - padding
+                this.svg.node()?.getBoundingClientRect().height! - boxHeight - padding
             )
         );
-
+    
         // Add semi-transparent overlay
         popup.append('rect')
             .attr('class', 'popup-overlay')
@@ -452,49 +526,23 @@ export class LineageMap {
             .attr('stroke', errors ? '#ff9800' : '#dee2e6')
             .attr('rx', 4)
             .attr('filter', 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))');
-
+    
         // Add text
         const textElement = popup.append('text')
             .attr('x', popupX + padding)
             .attr('y', popupY + padding + 12)
             .style('font-family', 'sans-serif')
             .style('font-size', '12px');
-
+    
         lines.forEach((line, i) => {
             const tspan = textElement.append('tspan')
                 .attr('x', popupX + padding)
                 .attr('dy', i === 0 ? 0 : lineHeight)
                 .text(line.text);
-
+    
             if (line.isError) {
                 tspan.style('fill', '#ff9800');
             }
-        });
-
-        // Add close button
-        const closeButton = popup.append('g')
-            .attr('class', 'close-button')
-            .attr('transform', `translate(${popupX + boxWidth - 16}, ${popupY + 16})`)
-            .style('cursor', 'pointer');
-
-        closeButton.append('circle')
-            .attr('r', 8)
-            .attr('fill', '#f8f9fa')
-            .attr('stroke', '#dee2e6');
-
-        closeButton.append('text')
-            .attr('x', 0)
-            .attr('y', 0)
-            .attr('dy', '0.35em')
-            .attr('text-anchor', 'middle')
-            .style('font-family', 'sans-serif')
-            .style('font-size', '12px')
-            .style('fill', '#666')
-            .text('×');
-
-        closeButton.on('click', () => {
-            this.selectedField = null;
-            this.hideTransformationPopup();
         });
     }
 
@@ -540,12 +588,14 @@ export class LineageMap {
     getTableLevels(graph: Graph): TableLevel[] {
         const upstreamTableDependencies = new Map<string, Set<string>>();
         const tableNodes = graph.nodes.filter(node => node.type === 'table');
+        const inferredEdges: Edge[] = this.inferTableRelationships(graph);
     
+        // Initialize dependencies for all tables
         tableNodes.forEach(table => {
             upstreamTableDependencies.set(table.id, new Set());
         });
     
-        const inferredEdges: Edge[] = this.inferTableRelationships(graph);
+        // Build dependencies based on inferred edges
         inferredEdges.forEach(edge => {
             const upstreamDeps = upstreamTableDependencies.get(edge.source);
             if (upstreamDeps) {
@@ -555,16 +605,37 @@ export class LineageMap {
 
         const levels: TableLevel[] = [];
         const processed = new Set<string>();
-        let currentLevel = 0;
-        let maxLevel = 0;
+    
+        // First, identify tables with no connections
+        const tablesWithNoConnections = tableNodes.filter(table => {
+            const hasIncomingEdges = inferredEdges.some(edge => edge.target === table.id);
+            const hasOutgoingEdges = inferredEdges.some(edge => edge.source === table.id);
+            return !hasIncomingEdges && !hasOutgoingEdges;
+        });
+    
+        // Add tables with no connections to a separate level (level 0)
+        tablesWithNoConnections.forEach(table => {
+            levels.push({
+                id: table.id,
+                level: 0,
+                dependencies: []
+            });
+            processed.add(table.id);
+        });
+    
+        // Process remaining tables with connections
+        let currentLevel = 1;
+        let maxLevel = 1;
+    
         while (processed.size < tableNodes.length) {
             const currentLevelTables = Array.from(upstreamTableDependencies.entries())
                 .filter(([tableId, deps]) => (
-                        !processed.has(tableId) &&
-                        Array.from(deps).every(dep => processed.has(dep))
-                    ));
-
+                    !processed.has(tableId) &&
+                    Array.from(deps).every(dep => processed.has(dep))
+                ));
+    
             if (currentLevelTables.length === 0 && processed.size < tableNodes.length) {
+                // Handle any remaining tables (cyclic dependencies)
                 tableNodes
                     .filter(table => !processed.has(table.id))
                     .forEach(table => {
@@ -582,18 +653,36 @@ export class LineageMap {
                         level: currentLevel,
                         dependencies: Array.from(deps)
                     });
-                    if (currentLevel > maxLevel) maxLevel = currentLevel
+                    if (currentLevel > maxLevel) maxLevel = currentLevel;
                     processed.add(tableId);
                 });
             }
             currentLevel++;
         }
-
-        for (let i = 0; i < levels.length; i++) {
-            levels[i].level = maxLevel - levels[i].level;
-        }
-
-        return levels;
+    
+        // Reverse the level numbers (excluding level 0)  
+        // because the above logic assigns levels based on  
+        // upstream dependencies (i.e., a table's dependencies  
+        // determine its level). Reversing ensures that  
+        // higher-level tables (with more dependencies)  
+        // appear later in the hierarchy.
+        levels.forEach(node => {
+            if (node.level !== 0) {
+                node.level = maxLevel - node.level + 1;
+            }
+        });
+    
+        // Group nodes by level
+        const levelMap = levels.reduce((map, node) => {
+            if (!map.has(node.level)) map.set(node.level, []);
+            map.get(node.level)!.push(node);
+            return map;
+        }, new Map<number, TableLevel[]>());
+    
+        // Sort levels in ascending order and flatten results
+        return [...levelMap.entries()]
+            .sort(([a], [b]) => a - b)
+            .flatMap(([_, nodes]) => nodes);;
     }
 
     getRelatedFields(graph: Graph, fieldId: string) {
@@ -627,28 +716,10 @@ export class LineageMap {
         }
     }
 
-    getJoinedByFields(graph: Graph) {
-        graph.nodes
-        .filter((node): node is TableNode => 
-            node.type === 'table' && 
-            node.joinedBy !== undefined
-        )
-        .forEach(table => {
-            graph.nodes
-                .filter(n => n.type === 'field' && table.joinedBy && table.joinedBy.includes(n.id))
-                .forEach(field => {
-                    console.log('Adding field to highlights:', field);
-                    this.highlightedJoinedByFields.add(field.id);
-            });
-        });
-    }
-
     handleFieldHover(graph: Graph, fieldId: string | null): void {
         if (fieldId) {
             this.highlightedRelatedFields = this.getRelatedFields(graph, fieldId);
-            this.getJoinedByFields(graph);
         } else {
-            this.highlightedJoinedByFields.clear();
             this.highlightedRelatedFields.clear();
         }
         this.renderHighlights();
@@ -658,16 +729,12 @@ export class LineageMap {
         // Update field backgrounds
         this.mainGroup.selectAll<SVGElement, Node>('.field-row')
             .style('fill', d => {
-                // highlight joinedBy fields in purple
-                if (this.highlightedJoinedByFields.has(d.id)) {
-                    return '#dacdfd'; // Purple
-                }
                 // highlight related fields in blue
                 if (this.highlightedRelatedFields.has(d.id)) {
                     return '#e3f2fd'; // Blue
                 }
                 return '#ffffff'; // Default background
-        });
+            });
 
         // Update edges
         this.mainGroup.selectAll<SVGElement, Edge>('.edge')
@@ -699,7 +766,7 @@ export class LineageMap {
 
     renderBase(graph: Graph): void {
         this.currentGraph = graph;
-    
+
         // Expand all tables by default
         graph.nodes
             .filter(node => node.type === 'table')
@@ -720,6 +787,24 @@ export class LineageMap {
         this.renderNodes(graph, positions);
         this.setupEventListeners();
     }
+
+
+    // Calculate average Y position of incoming edges for the first table in a level
+    getAverageIncomingY = (graph: Graph, tableId: string, positions: Map<string, Position>): number | null => {
+        const incomingEdges = graph.edges.filter(e => e.target.startsWith(tableId));
+        if (incomingEdges.length === 0) return null;
+        let totalY = 0;
+        const edgeSourceSet = new Set();
+
+        for (const edge of incomingEdges) {
+            if (!edgeSourceSet.has(edge.source)) {
+                edgeSourceSet.add(edge.source);
+                const fieldPositionY = positions.get(edge.source)?.y;
+                if (fieldPositionY) totalY += fieldPositionY;
+            }
+        }
+        return totalY / edgeSourceSet.size;
+    };
 
     calculatePositions(graph: Graph, tableLevels: TableLevel[]): Map<string, Position> {
         const positions = new Map();
@@ -762,21 +847,26 @@ export class LineageMap {
         // Find maximum level height for vertical centering
         const maxLevelHeight = Math.max(...Array.from(levelHeights.values()));
 
-        // Position tables and their fields
         tablesByLevel.forEach((tablesInLevel, level) => {
             const levelX = level * (tableWidth + levelPadding);
             const levelHeight = levelHeights.get(level) || 0;
             let currentY = (maxLevelHeight - levelHeight) / 2;
-
-            tablesInLevel.forEach((tableId: string) => {
+        
+            tablesInLevel.forEach((tableId: string, idx: number) => {
                 const tableNode = graph.nodes.find(n => n.id === tableId);
                 if (!tableNode) return;
-
-                // Position table
-                positions.set(tableId, {
-                    x: levelX,
-                    y: currentY + verticalPadding
-                });
+        
+                // Determine Y position for the table
+                let yPosition = currentY + verticalPadding;
+                if (idx === 0) {
+                    const averagingIncomingEdgeY = this.getAverageIncomingY(graph, tableId, positions);
+                    if (averagingIncomingEdgeY != null) {
+                        yPosition = averagingIncomingEdgeY;
+                    }
+                }
+                
+                // Set table position
+                positions.set(tableId, { x: levelX, y: yPosition });
 
                 // Position fields if table is expanded
                 if (this.expandedTables.has(tableId)) {
@@ -784,13 +874,13 @@ export class LineageMap {
                     fields.forEach((field, index) => {
                         positions.set(field.id, {
                             x: levelX,
-                            y: currentY + verticalPadding + tableHeight + (index * (fieldHeight + fieldSpacing))
+                            y: yPosition + tableHeight + index * (fieldHeight + fieldSpacing),
                         });
                     });
                 }
 
                 // Update Y position for next table
-                currentY += getTableHeight(tableId) + verticalPadding;
+                currentY = yPosition + getTableHeight(tableId) + verticalPadding;
             });
         });
 
@@ -930,11 +1020,27 @@ export class LineageMap {
                 }
             });
     
-        // Close transformation popup when clicking outside
+        this.mainGroup.selectAll('.table-info-button')
+            .on('click', (event: any, d: unknown) => {
+                event.stopPropagation(); // Prevent triggering table expansion
+                const tableNode = d as TableNode;
+                this.showTableInfoPopup(tableNode);
+            });
+    
+        // Combined click handler for closing all popups when clicking outside
         this.svg.on('click', (event: any) => {
-            if ((event.target as HTMLElement).closest('.field-group')) return;
-            this.selectedField = null;
-            this.hideTransformationPopup();
+            const target = event.target as HTMLElement;
+            const isClickingField = target.closest('.field-group');
+            const isClickingInfoButton = target.closest('.table-info-button');
+            const isClickingPopup = target.closest('.transformation-popup') || target.closest('.table-info-popup');
+    
+            // Only close popups if clicking outside of relevant elements
+            if (!isClickingField && !isClickingInfoButton && !isClickingPopup) {
+                // Close all popups and reset selection state
+                this.selectedField = null;
+                this.hideTransformationPopup();
+                this.mainGroup.selectAll('.table-info-popup').remove();
+            }
         });
     }
 
@@ -948,7 +1054,6 @@ export class LineageMap {
         // Clear any stored state
         this.expandedTables.clear();
         this.highlightedRelatedFields.clear();
-        this.highlightedJoinedByFields.clear();
         this.positions.clear();
         this.validationErrors.clear();
         this.currentGraph = null;

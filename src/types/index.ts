@@ -28,7 +28,7 @@ export interface BaseNode {
 
 export interface TableNode extends BaseNode {
   type: 'table';
-  joinedBy?: string[];
+  note?: string;
 }
 
 export interface FieldNode extends BaseNode {
