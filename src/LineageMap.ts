@@ -793,9 +793,11 @@ export class LineageMap {
         if (incomingEdges.length === 0) return null;
         
         const edgeSourceSet: Set<string> = new Set();
+        const tableSourceSet: Set<string> = new Set();
         let totalY: number = 0;
         let minY: number | null = null;
         for (const edge of incomingEdges) {
+            tableSourceSet.add(edge.source.split(":")[0])
             if (!edgeSourceSet.has(edge.source)) {
                 edgeSourceSet.add(edge.source);
                 const fieldPositionY = positions.get(edge.source)?.y;
@@ -811,7 +813,7 @@ export class LineageMap {
         // we dont want to have this tables y position start at the average
         // incoming y position, so we put this tables y position to the min
         // incoming y position.
-        if (edgeSourceSet.size === 1) {
+        if (tableSourceSet.size === 1) {
             return minY;
         } else {
             return totalY / edgeSourceSet.size;
@@ -871,9 +873,9 @@ export class LineageMap {
                 // Determine Y position for the table
                 let yPosition = currentY + verticalPadding;
                 if (idx === 0) {
-                    const averagingIncomingEdgeY = this.getOptimalTableY(graph, tableId, positions);
-                    if (averagingIncomingEdgeY != null) {
-                        yPosition = averagingIncomingEdgeY;
+                    const optimalTableY = this.getOptimalTableY(graph, tableId, positions);
+                    if (optimalTableY != null) {
+                        yPosition = optimalTableY;
                     }
                 }
                 
