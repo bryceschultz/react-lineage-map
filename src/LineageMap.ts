@@ -14,6 +14,8 @@ export class LineageMap {
     private mainGroup!: d3.Selection<SVGGElement, unknown, null, undefined>;
     private zoom!: d3.ZoomBehavior<SVGSVGElement, unknown>;
     private currentGraph: Graph | null = null;
+    private static readonly SQL_START_TAG = '---startsql';
+    private static readonly SQL_END_TAG = '---endsql';
 
     constructor(container: HTMLElement, options: LineageMapOptions = {}) {
         this.container = container;
@@ -419,7 +421,77 @@ export class LineageMap {
         return lines;
     }
 
-    showTransformationPopup(field: FieldNode, graph: Graph) {
+    private extractTextBlocks(text: string): { type: 'sql' | 'text', content: string }[] {
+        const blocks: { type: 'sql' | 'text', content: string }[] = [];
+        
+        // Convert to lowercase for case-insensitive matching but keep original for content
+        const lowerText = text.toLowerCase();
+        let currentPos = 0;
+    
+        while (true) {
+            const startTag = lowerText.indexOf(LineageMap.SQL_START_TAG, currentPos);
+            if (startTag === -1) {
+                // Add remaining text if there's any
+                const remaining = text.slice(currentPos).trim();
+                if (remaining) {
+                    blocks.push({ type: 'text', content: remaining });
+                }
+                break;
+            }
+    
+            // Add text before SQL block if there's any
+            const beforeSql = text.slice(currentPos, startTag).trim();
+            if (beforeSql) {
+                blocks.push({ type: 'text', content: beforeSql });
+            }
+    
+            // Find the end of SQL block
+            const sqlStart = startTag + LineageMap.SQL_START_TAG.length;
+            const endTag = lowerText.indexOf(LineageMap.SQL_END_TAG, sqlStart);
+            
+            if (endTag === -1) {
+                // If no end tag, treat rest as text
+                const remaining = text.slice(currentPos).trim();
+                if (remaining) {
+                    blocks.push({ type: 'text', content: remaining });
+                }
+                break;
+            }
+    
+            // Extract SQL content
+            const sql = text.slice(sqlStart, endTag).trim();
+            if (sql) {
+                blocks.push({ type: 'sql', content: sql });
+            }
+    
+            currentPos = endTag + LineageMap.SQL_END_TAG.length;
+        }
+    
+        return blocks;
+    }
+    
+    private formatTextBlock(text: string, maxWidth: number, tempText: d3.Selection<SVGTextElement, unknown, null, undefined>): { text: string; isError: boolean; isCode: boolean }[] {
+        return this.wrapText(text, maxWidth, tempText, false)
+            .map(line => ({ ...line, isCode: false }));
+    }
+    
+    private formatSQLBlock(sql: string): { text: string; isError: boolean; isCode: boolean }[] {
+        return sql.split('\n')
+            .reduce((acc: string[], line: string) => {
+                const trimmedLine = line.trimRight();
+                if (acc.length === 0 || !(trimmedLine === '' && acc[acc.length - 1] === '')) {
+                    acc.push(trimmedLine);
+                }
+                return acc;
+            }, [])
+            .map(line => ({
+                text: line,
+                isError: false,
+                isCode: true
+            }));
+    }
+    
+    private showTransformationPopup(field: FieldNode, graph: Graph) {
         this.hideTransformationPopup();
     
         if (!field.transformation && !field.note) return;
@@ -434,60 +506,72 @@ export class LineageMap {
         const padding = 16;
         const maxWidth = this.options.popUpWidth;
         const lineHeight = 20;
+        const codeLineHeight = 16;
         const textWidth = maxWidth - (padding * 2);
-
+    
         // Create temporary text element for measurements
         const tempText = popup.append('text')
-            .style('font-family', 'sans-serif')
+            .style('font-family', 'monospace')
             .style('font-size', '12px');
-
-        const lines: { text: string; isError: boolean }[] = [];
-
+    
+        const lines: { text: string; isError: boolean; isCode?: boolean }[] = [];
+    
         // Add transformation if it exists
         if (field.transformation) {
-            let transformationText = field.transformation;
+            lines.push({ text: 'Transformation:', isError: false });
+            
+            // Handle field references in transformation
             const fieldRefRegex = /[a-zA-Z_]+:[a-zA-Z_]+\d*/g;
             const fieldRefs = field.transformation.match(fieldRefRegex) || [];
-
+            let formattedText = field.transformation;
+    
             fieldRefs.forEach(fieldId => {
                 const referencedField = graph.nodes.find(n => n.id === fieldId && n.type === 'field');
                 if (referencedField) {
-                    transformationText = transformationText.replace(
+                    formattedText = formattedText.replace(
                         new RegExp(`\\b${fieldId}\\b`, 'g'),
                         referencedField.name
                     );
                 }
             });
-
-            lines.push(...this.wrapText(
-                `Transformation: ${transformationText}`,
-                textWidth,
-                tempText,
-                false
-            ));
-
+    
+            lines.push({ text: formattedText, isError: false });
+    
             // Add a blank line if both transformation and note exist
             if (field.note) {
                 lines.push({ text: '', isError: false });
             }
         }
-
+    
         // Add note if it exists
         if (field.note) {
-            lines.push(...this.wrapText(
-                `Note: ${field.note}`,
-                textWidth,
-                tempText,
-                false
-            ));
+            lines.push({ text: 'Note:', isError: false });
+            
+            // Process the note content
+            const blocks = this.extractTextBlocks(field.note);
+            
+            blocks.forEach((block, index) => {
+                if (index > 0) {
+                    // Add spacing between blocks
+                    lines.push({ text: '', isError: false });
+                }
+                
+                if (block.type === 'sql') {
+                    // Format SQL blocks
+                    lines.push(...this.formatSQLBlock(block.content));
+                } else {
+                    // Format regular text blocks
+                    lines.push(...this.formatTextBlock(block.content, textWidth, tempText));
+                }
+            });
         }
-
+    
         // Add error messages if they exist
         const errors = this.validationErrors.get(field.id);
         if (errors && errors.length > 0) {
             lines.push({ text: '', isError: false });
             lines.push({ text: 'Validation Errors:', isError: true });
-
+    
             errors.forEach(error => {
                 const wrappedError = this.wrapText(
                     `• ${error}`,
@@ -495,16 +579,25 @@ export class LineageMap {
                     tempText,
                     true
                 );
-                lines.push(...wrappedError);
+                lines.push(...wrappedError.map(line => ({ ...line, isCode: false })));
             });
         }
-
+    
         tempText.remove();
-
-        // Calculate box dimensions
-        const boxHeight = (lineHeight * lines.length) + padding * 2;
-        const boxWidth = maxWidth;
-
+    
+        // Calculate box dimensions, accounting for different line heights
+        const totalHeight = lines.reduce((acc, line) => {
+            if (line.isCode) {
+                return acc + codeLineHeight;
+            }
+            return acc + (line.text ? lineHeight : lineHeight / 2);
+        }, 0);
+    
+        const boxHeight = totalHeight + padding * 2;
+        const boxWidth = Math.max(maxWidth,
+            Math.max(...lines.filter(l => l.isCode).map(l => l.text.length * 7)) + padding * 2
+        );
+    
         // Position popup
         const popupX = pos.x + this.options.tableWidth + 10;
         const popupY = Math.max(
@@ -530,19 +623,28 @@ export class LineageMap {
         // Add text
         const textElement = popup.append('text')
             .attr('x', popupX + padding)
-            .attr('y', popupY + padding + 12)
-            .style('font-family', 'sans-serif')
-            .style('font-size', '12px');
+            .attr('y', popupY + padding + 12);
     
-        lines.forEach((line, i) => {
+        let currentY = 0;
+        lines.forEach((line) => {
             const tspan = textElement.append('tspan')
                 .attr('x', popupX + padding)
-                .attr('dy', i === 0 ? 0 : lineHeight)
+                .attr('dy', currentY === 0 ? 0 : (line.isCode ? codeLineHeight : lineHeight))
                 .text(line.text);
     
-            if (line.isError) {
-                tspan.style('fill', '#ff9800');
+            if (line.isCode) {
+                tspan
+                    .style('font-family', 'monospace')
+                    .style('font-size', '11px')
+                    .style('fill', '#2563eb'); // Blue color for code
+            } else {
+                tspan
+                    .style('font-family', 'sans-serif')
+                    .style('font-size', '12px')
+                    .style('fill', line.isError ? '#ff9800' : '#1E293B');
             }
+    
+            currentY += line.isCode ? codeLineHeight : lineHeight;
         });
     }
 
