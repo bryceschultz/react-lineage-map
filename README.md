@@ -255,7 +255,7 @@ const graph: GraphProp = {
 
 ## Special Features
 
-# Field and Table Documentation
+### Field and Table Documentation
 - Support for both plain text and SQL blocks in notes
 - SQL blocks are formatted and syntax highlighted
 - Use `---startsql` and `---endsql` tags to denote SQL blocks
