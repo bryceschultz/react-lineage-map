@@ -255,12 +255,24 @@ const graph: GraphProp = {
 
 ## Special Features
 
-### Field Documentation
+# Field and Table Documentation
 - Support for both plain text and SQL blocks in notes
 - SQL blocks are formatted and syntax highlighted
 - Use `---startsql` and `---endsql` tags to denote SQL blocks
-
 ```typescript
+// SQL blocks in table notes
+{
+  id: 'customer_table',
+  type: 'table',
+  note: `This table contains filtered customer data:
+          ---startsql
+          SELECT * FROM customers
+          WHERE status = 'active'
+          ---endsql
+          Only active customers are included`
+}
+
+// SQL blocks in field notes
 {
   id: 'table:field1',
   type: 'field',

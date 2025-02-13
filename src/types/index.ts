@@ -83,3 +83,10 @@ export interface TableLevel {
   level: number;
   dependencies: string[];
 }
+
+export interface PopupLine {
+  text: string;
+  isError: boolean; 
+  isCode?: boolean;
+  extraSpace?: boolean;
+}

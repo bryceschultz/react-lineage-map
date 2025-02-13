@@ -1,5 +1,5 @@
 import * as d3 from 'd3';
-import { LineageMapOptions, Position, Graph, Node, Edge, TableLevel, FieldNode, TableNode } from "./types/index"
+import { LineageMapOptions, Position, Graph, Node, Edge, TableLevel, FieldNode, TableNode, PopupLine } from "./types/index"
 
 export class LineageMap {
     private container: HTMLElement;
@@ -214,6 +214,7 @@ export class LineageMap {
         const padding = 10;
         const maxWidth = this.options.popUpWidth;
         const lineHeight = 20;
+        const codeLineHeight = 16;
         const textWidth = maxWidth - (padding * 2);
 
         // Create temporary text element for measurements
@@ -221,33 +222,13 @@ export class LineageMap {
             .style('font-family', 'sans-serif')
             .style('font-size', '12px');
 
-        const lines: { text: string; isError: boolean }[] = [];
 
         // Add note if it exists
-        if (table.note) {
-            lines.push(...this.wrapText(
-                `Note: ${table.note}`,
-                textWidth,
-                tempText,
-                false
-            ));
-        }
+        const lines: PopupLine[] = this.generateNote(table, textWidth, tempText);
 
         tempText.remove();
 
-        // Calculate box dimensions
-        const boxHeight = (lineHeight * lines.length) + padding * 2;
-        const boxWidth = maxWidth;
-
-        // Position popup
-        const popupX = pos.x + this.options.tableWidth + 10;
-        const popupY = Math.max(
-            padding,
-            Math.min(
-                pos.y - boxHeight / 2,
-                this.svg.node()?.getBoundingClientRect().height! - boxHeight - padding
-            )
-        );
+        const { boxWidth, boxHeight, popupX, popupY } = this.calculatePopupPosition(lines, codeLineHeight, lineHeight, padding, maxWidth, pos);
 
         // Add semi-transparent overlay
         popup.append('rect')
@@ -264,16 +245,95 @@ export class LineageMap {
         // Add text
         const textElement = popup.append('text')
             .attr('x', popupX + padding)
-            .attr('y', popupY + padding + 12)
-            .style('font-family', 'sans-serif')
-            .style('font-size', '12px');
+            .attr('y', popupY + padding + 12);
+    
+        this.formatPopupLines(lines, textElement, popupX, padding, codeLineHeight, lineHeight);
+    }
 
-        lines.forEach((line, i) => {
-            textElement.append('tspan')
+    private generateNote(node: FieldNode | TableNode, textWidth: number, tempText: d3.Selection<SVGTextElement, unknown, null, undefined>): { text: string; isError: boolean; isCode?: boolean, extraSpace?: boolean }[] {
+        const lines: PopupLine[] = [];
+        
+        // node in this context can be either a table or field
+        if (node.note) {
+            lines.push({ text: `Note for ${node.name}: `, isError: false });
+            lines.push({ text: '', isError: false, extraSpace: true });
+
+            const blocks = this.extractTextBlocks(node.note);
+            blocks.forEach((block, index) => {
+                if (index > 0) {
+                    // Add spacing between blocks
+                    lines.push({ text: '', isError: false });
+                }
+                if (block.type === 'sql') {
+                    // Format SQL blocks using monospace font and blue color
+                    lines.push(...this.formatSQLBlock(block.content));
+                } else {
+                    // Format regular text blocks
+                    lines.push(...this.formatTextBlock(block.content, textWidth, tempText));
+                }
+            });
+        }
+        return lines;
+    }
+
+    private calculatePopupPosition(lines: PopupLine[], codeLineHeight: number, lineHeight: number, padding: number, maxWidth: number, pos: Position) {
+        // Calculate box dimensions, accounting for different line heights
+        const totalHeight = lines.reduce((acc, line) => {
+            if (line.isCode) {
+                return acc + codeLineHeight;
+            }
+            return acc + (line.text ? lineHeight : lineHeight / 2);
+        }, 0);
+    
+        const boxHeight = totalHeight + padding * 2;
+        const boxWidth = Math.max(maxWidth,
+            Math.max(...lines.filter(l => l.isCode).map(l => l.text.length * 7)) + padding * 2
+        );
+    
+        // Position popup
+        const popupX = pos.x + this.options.tableWidth + 10;
+        const popupY = Math.max(
+            padding,
+            Math.min(
+                pos.y - boxHeight / 2,
+                this.svg.node()?.getBoundingClientRect().height! - boxHeight - padding
+            )
+        );
+        return { boxWidth, boxHeight, popupX, popupY };
+    }
+
+    private formatPopupLines(lines: PopupLine[], textElement: d3.Selection<SVGTextElement, unknown, null, undefined>, popupX: number, padding: number, codeLineHeight: number, lineHeight: number) {
+        let currentY = 0;
+
+        lines.forEach((line) => {
+            if (line.extraSpace) {
+                textElement.append('tspan')
+                    .attr('x', popupX + padding)
+                    .attr('dy', lineHeight) // Move down one line
+                    .text('\u00A0') // Non-breaking space
+                    .style('fill', 'white'); // Make it invisible
+                currentY += lineHeight * 2;
+                return;
+            }
+            
+            const tspan = textElement.append('tspan')
                 .attr('x', popupX + padding)
-                .attr('dy', i === 0 ? 0 : lineHeight)
-                .text(line.text)
-                .style('fill', line.isError ? '#ff9800' : '#1E293B');
+                .attr('dy', currentY === 0 ? 0 : (line.isCode ? codeLineHeight : lineHeight))
+                .text(line.text);
+    
+            if (line.isCode) {
+                tspan
+                    .style('font-family', 'monospace')
+                    .style('font-size', '11px')
+                    .style('fill', '#2563eb'); // Blue color for code
+            } else {
+                tspan
+                    .style('font-family', 'sans-serif')
+                    .style('font-size', '12px')
+                    .style('fill', line.isError ? '#ff9800' : '#1E293B');
+            }
+    
+            currentY += line.isCode ? codeLineHeight : lineHeight;
         });
     }
 
@@ -514,7 +574,7 @@ export class LineageMap {
             .style('font-family', 'monospace')
             .style('font-size', '12px');
     
-        const lines: { text: string; isError: boolean; isCode?: boolean }[] = [];
+        const lines: PopupLine[] = [];
     
         // Add transformation if it exists
         if (field.transformation) {
@@ -544,27 +604,7 @@ export class LineageMap {
         }
     
         // Add note if it exists
-        if (field.note) {
-            lines.push({ text: 'Note:', isError: false });
-            
-            // Process the note content
-            const blocks = this.extractTextBlocks(field.note);
-            
-            blocks.forEach((block, index) => {
-                if (index > 0) {
-                    // Add spacing between blocks
-                    lines.push({ text: '', isError: false });
-                }
-                
-                if (block.type === 'sql') {
-                    // Format SQL blocks
-                    lines.push(...this.formatSQLBlock(block.content));
-                } else {
-                    // Format regular text blocks
-                    lines.push(...this.formatTextBlock(block.content, textWidth, tempText));
-                }
-            });
-        }
+        lines.push(...this.generateNote(field, textWidth, tempText));
     
         // Add error messages if they exist
         const errors = this.validationErrors.get(field.id);
@@ -585,28 +625,7 @@ export class LineageMap {
     
         tempText.remove();
     
-        // Calculate box dimensions, accounting for different line heights
-        const totalHeight = lines.reduce((acc, line) => {
-            if (line.isCode) {
-                return acc + codeLineHeight;
-            }
-            return acc + (line.text ? lineHeight : lineHeight / 2);
-        }, 0);
-    
-        const boxHeight = totalHeight + padding * 2;
-        const boxWidth = Math.max(maxWidth,
-            Math.max(...lines.filter(l => l.isCode).map(l => l.text.length * 7)) + padding * 2
-        );
-    
-        // Position popup
-        const popupX = pos.x + this.options.tableWidth + 10;
-        const popupY = Math.max(
-            padding,
-            Math.min(
-                pos.y - boxHeight / 2,
-                this.svg.node()?.getBoundingClientRect().height! - boxHeight - padding
-            )
-        );
+        const { boxWidth, boxHeight, popupX, popupY } = this.calculatePopupPosition(lines, codeLineHeight, lineHeight, padding, maxWidth, pos);
     
         // Add semi-transparent overlay
         popup.append('rect')
@@ -625,27 +644,7 @@ export class LineageMap {
             .attr('x', popupX + padding)
             .attr('y', popupY + padding + 12);
     
-        let currentY = 0;
-        lines.forEach((line) => {
-            const tspan = textElement.append('tspan')
-                .attr('x', popupX + padding)
-                .attr('dy', currentY === 0 ? 0 : (line.isCode ? codeLineHeight : lineHeight))
-                .text(line.text);
-    
-            if (line.isCode) {
-                tspan
-                    .style('font-family', 'monospace')
-                    .style('font-size', '11px')
-                    .style('fill', '#2563eb'); // Blue color for code
-            } else {
-                tspan
-                    .style('font-family', 'sans-serif')
-                    .style('font-size', '12px')
-                    .style('fill', line.isError ? '#ff9800' : '#1E293B');
-            }
-    
-            currentY += line.isCode ? codeLineHeight : lineHeight;
-        });
+        this.formatPopupLines(lines, textElement, popupX, padding, codeLineHeight, lineHeight);
     }
 
     hideTransformationPopup() {
