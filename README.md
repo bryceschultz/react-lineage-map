@@ -1,8 +1,24 @@
-# react-lineage-map
+# react-lineage-map <img src="assets/react-lineage-map.svg" alt="ParticleViz Icon" width="40" align="top">
 
 A powerful React component for visualizing and managing data lineage with field-level mapping, transformations, and interactive features.
 
+![License](https://img.shields.io/badge/license-MIT-blue)
+![NPM Version](https://img.shields.io/npm/v/react-lineage-map) <br/>
+[![Edit on CodeSandbox](https://codesandbox.io/static/img/play-codesandbox.svg)](https://codesandbox.io/p/sandbox/mlcpzy)
+
+
+
 ![react-lineage-map screenshot](assets/react-lineage-map-screenshot.png)
+
+## Table of Contents
+- [Features](#features)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Configuration Options](#configuration-options)
+- [Type Definitions](#type-definitions)
+- [Contributing](#contributing)
+- [License](#license)
+
 
 ## Features
 
@@ -255,7 +271,9 @@ const graph: GraphProp = {
 
 ## Special Features
 
-### Field and Table Documentation
+### Field and Table Documentation  
+
+#### SQL Notes  
 - Support for both plain text and SQL blocks in notes
 - SQL blocks are formatted and syntax highlighted
 - Use `---startsql` and `---endsql` tags to denote SQL blocks
@@ -283,6 +301,21 @@ const graph: GraphProp = {
           FROM source_table
           ---endsql
           The result is then normalized.`
+}
+```
+
+#### Using `\n` for Newlines in Notes  
+
+When concatenating strings in field notes, use `\n` to create newlines. This is especially useful for formatting bulleted lists or separating information clearly.  
+
+```typescript
+{
+  id: 'table:field2',
+  type: 'field',
+  note: 'Key details:\n' +
+        '- This field is calculated monthly.\n' +
+        '- Includes only active users.\n' +
+        '- Excludes test data.'
 }
 ```
 

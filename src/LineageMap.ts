@@ -530,12 +530,32 @@ export class LineageMap {
         return blocks;
     }
     
-    private formatTextBlock(text: string, maxWidth: number, tempText: d3.Selection<SVGTextElement, unknown, null, undefined>): { text: string; isError: boolean; isCode: boolean }[] {
-        return this.wrapText(text, maxWidth, tempText, false)
-            .map(line => ({ ...line, isCode: false }));
+    private formatTextBlock(text: string, maxWidth: number, tempText: d3.Selection<SVGTextElement, unknown, null, undefined>): PopupLine[] {
+        // Split text by newline characters
+        const paragraphs = text.split('\n');
+        const result: PopupLine[] = [];
+    
+        for (let i = 0; i < paragraphs.length; i++) {
+            // For non-empty paragraphs, wrap text to fit inside popup
+            if (paragraphs[i].trim() !== '') {
+                const wrappedLines = this.wrapText(paragraphs[i], maxWidth, tempText, false)
+                    .map(line => ({ ...line, isCode: false }));
+                result.push(...wrappedLines);
+            } else {
+                // For empty paragraphs (just \n with nothing else), still add an empty line
+                result.push({ text: '', isError: false, isCode: false, extraSpace: true });
+            }
+            
+            // Add an empty line between paragraphs (except after the last one)
+            if (i < paragraphs.length - 1) {
+                result.push({ text: '', isError: false, isCode: false });
+            }
+        }
+        
+        return result;
     }
     
-    private formatSQLBlock(sql: string): { text: string; isError: boolean; isCode: boolean }[] {
+    private formatSQLBlock(sql: string): PopupLine[] {
         return sql.split('\n')
             .reduce((acc: string[], line: string) => {
                 const trimmedLine = line.trimRight();
