@@ -18,6 +18,7 @@ export default function App() {
             levelPadding: 100,
             verticalPadding: 50,
             popUpWidth: 300,
+            popUpFloat: "high",
             maxCurveOffset: 80,
           }}
         />

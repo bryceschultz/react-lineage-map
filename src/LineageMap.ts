@@ -29,6 +29,7 @@ export class LineageMap {
             levelPadding: options.levelPadding || 100,
             verticalPadding: options.verticalPadding || 50,
             popUpWidth: options.popUpWidth || 300,
+            popUpFloat: options.popUpFloat || "high",
             maxCurveOffset: options.maxCurveOffset || 100
         };
 
@@ -107,7 +108,9 @@ export class LineageMap {
 
     private renderTable(node: d3.Selection<SVGGElement, Node, null, undefined>, data: Node): void {
         const { tableWidth, tableHeight } = this.options;
-        
+
+        node.attr('data-table-id', data.id);
+
         // Add drop shadow filter
         const defs = node.append('defs');
         const dropShadowId = `dropShadow-${data.id}`;
@@ -228,7 +231,7 @@ export class LineageMap {
 
         tempText.remove();
 
-        const { boxWidth, boxHeight, popupX, popupY } = this.calculatePopupPosition(lines, codeLineHeight, lineHeight, padding, maxWidth, pos);
+        const { boxWidth, boxHeight, popupX, popupY } = this.calculatePopupPosition(table, lines, codeLineHeight, lineHeight, padding, maxWidth);
 
         // Add semi-transparent overlay
         popup.append('rect')
@@ -276,8 +279,15 @@ export class LineageMap {
         return lines;
     }
 
-    private calculatePopupPosition(lines: PopupLine[], codeLineHeight: number, lineHeight: number, padding: number, maxWidth: number, pos: Position) {
-        // Calculate box dimensions, accounting for different line heights
+    private calculatePopupPosition(
+        node: Node, 
+        lines: PopupLine[], 
+        codeLineHeight: number, 
+        lineHeight: number, 
+        padding: number, 
+        maxWidth: number
+    ): { boxWidth: number, boxHeight: number, popupX: number, popupY: number } {
+        // Calculate box dimensions
         const totalHeight = lines.reduce((acc, line) => {
             if (line.isCode) {
                 return acc + codeLineHeight;
@@ -290,15 +300,33 @@ export class LineageMap {
             Math.max(...lines.filter(l => l.isCode).map(l => l.text.length * 7)) + padding * 2
         );
     
-        // Position popup
-        const popupX = pos.x + this.options.tableWidth + 10;
-        const popupY = Math.max(
-            padding,
-            Math.min(
-                pos.y - boxHeight / 2,
-                this.svg.node()?.getBoundingClientRect().height! - boxHeight - padding
-            )
-        );
+        // Find the corresponding group element and its bounding box
+        const group = node.type === "field" 
+            ? document.querySelector(`.field-group[data-field-id="${node.id}"]`) 
+            : document.querySelector(`g[data-table-id="${node.id}"]`);
+        if (!group) {
+            console.warn(`Group with id="${node.id}" not found`);
+            return { boxWidth, boxHeight, popupX: 0, popupY: 0 };
+        }
+        const bbox = group.getBoundingClientRect();
+    
+        // Get bounding box of the d3 canvas
+        const svgNode = this.svg.node();
+        if (!svgNode) {
+            console.warn("SVG node is not available");
+            return { boxWidth, boxHeight, popupX: 0, popupY: 0 };
+        }
+        const svgBbox = svgNode.getBoundingClientRect();
+    
+        // Get the current zoom/pan transformation
+        const transform = d3.zoomTransform(this.mainGroup.node() as SVGGraphicsElement);
+    
+        // Convert screen coordinates to SVG space
+        const popupX = transform.invertX(bbox.right - svgBbox.left) + 5;
+        const popupY = this.options.popUpFloat === "high" ? 
+            transform.invertY(bbox.top - svgBbox.top) - boxHeight + this.options.fieldHeight:
+            transform.invertY(bbox.top - svgBbox.top);
+    
         return { boxWidth, boxHeight, popupX, popupY };
     }
 
@@ -645,7 +673,7 @@ export class LineageMap {
     
         tempText.remove();
     
-        const { boxWidth, boxHeight, popupX, popupY } = this.calculatePopupPosition(lines, codeLineHeight, lineHeight, padding, maxWidth, pos);
+        const { boxWidth, boxHeight, popupX, popupY } = this.calculatePopupPosition(field, lines, codeLineHeight, lineHeight, padding, maxWidth);
     
         // Add semi-transparent overlay
         popup.append('rect')

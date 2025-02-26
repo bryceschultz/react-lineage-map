@@ -16,6 +16,7 @@ A powerful React component for visualizing and managing data lineage with field-
 - [Usage](#usage)
 - [Configuration Options](#configuration-options)
 - [Type Definitions](#type-definitions)
+- [Special Features](#special-features)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -107,6 +108,7 @@ function App() {
           levelPadding: 100,
           verticalPadding: 50,
           popUpWidth: 300,
+          popUpFloat: "high",
           maxCurveOffset: 80,
         }}
       />
@@ -130,6 +132,7 @@ function App() {
 | levelPadding | number | 100 | Horizontal spacing between levels |
 | verticalPadding | number | 50 | Vertical spacing between tables |
 | popUpWidth | number | 300 | Width of documentation popups |
+| popUpFloat | string | "high" | Whether to float popups above or below their targets
 | maxCurveOffset | number | 100 | Maximum curve of edge connections |
 
 ## Type Definitions
@@ -200,6 +203,7 @@ interface LineageMapOptions {
   levelPadding?: number;       // Horizontal spacing between levels
   verticalPadding?: number;    // Vertical spacing between tables
   popUpWidth?: number;         // Width of documentation popups
+  popUpFloat?: "high" | "low"; // Whether to float popups above or below their targets
   maxCurveOffset?: number;     // Maximum curve of edge connections
 }
 ```
@@ -257,16 +261,21 @@ const graph: GraphProp = {
 };
 
 // Component usage
-<LineageMapComponent
-  data={graph}
-  width="100%"
-  height="800px"
-  options={{
-    tableWidth: 250,
-    levelPadding: 100
-  }}
-  className="my-lineage-map"
-/>
+function App() {
+  return (
+    <div style={{ height: '800px' }}>
+      <LineageMapComponent
+        data={graph}
+        width="100%"
+        height="800px"
+        options={{
+          tableWidth: 250,
+          levelPadding: 100
+        }}
+        className="my-lineage-map"
+      />
+    </div>
+  );
 ```
 
 ## Special Features
@@ -282,6 +291,7 @@ const graph: GraphProp = {
 {
   id: 'customer_table',
   type: 'table',
+  name: 'Customer Table',
   note: `This table contains filtered customer data:
           ---startsql
           SELECT * FROM customers
@@ -294,6 +304,7 @@ const graph: GraphProp = {
 {
   id: 'table:field1',
   type: 'field',
+  name: 'field1',
   note: `This field is calculated using the following SQL:
           ---startsql
           SELECT 
@@ -312,6 +323,7 @@ When concatenating strings in field notes, use `\n` to create newlines. This is 
 {
   id: 'table:field2',
   type: 'field',
+  name: 'field2',
   note: 'Key details:\n' +
         '- This field is calculated monthly.\n' +
         '- Includes only active users.\n' +
