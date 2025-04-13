@@ -443,6 +443,8 @@ export class LineageMap {
         } else {
             this.selectedField = fieldId;
             this.showTransformationPopup(fieldNode, graph);
+            this.highlightedRelatedFields = this.getRelatedFields(graph, fieldId);
+            this.renderHighlights(fieldId);
         }
     }
 
@@ -865,16 +867,21 @@ export class LineageMap {
         }
     }
 
-    handleFieldHover(graph: Graph, fieldId: string | null): void {
-        if (fieldId) {
+    handleMouseEnterField(graph: Graph, fieldId: string): void {
+        if (!this.selectedField) {
             this.highlightedRelatedFields = this.getRelatedFields(graph, fieldId);
-        } else {
-            this.highlightedRelatedFields.clear();
+            this.renderHighlights(fieldId);
         }
-        this.renderHighlights();
+    } 
+
+    handleMouseLeaveField() {
+        if (!this.selectedField) {
+            this.highlightedRelatedFields.clear();
+            this.renderHighlights(null);
+        }
     }
 
-    renderHighlights(): void {
+    renderHighlights(sourceFieldId: string | null): void {
         // Update field backgrounds
         this.mainGroup.selectAll<SVGElement, Node>('.field-row')
             .style('fill', d => {
@@ -883,8 +890,26 @@ export class LineageMap {
                     return '#e3f2fd'; // Blue
                 }
                 return '#ffffff'; // Default background
+            })
+            .style('stroke', d => {
+                // If this is the source field, use blue outline
+                if (sourceFieldId && d.id === sourceFieldId) {
+                    return '#2196f3';
+                }
+                // If there are validation errors, use orange outline
+                else if (this.validationErrors.has(d.id)) {
+                    return '#ff9800';
+                }
+                return '#eeeeee'; // default to grey outline
+            })
+            .style('stroke-width', d => {
+                // Source field or field with validation error gets 2px width
+                if (d.id === sourceFieldId || this.validationErrors.has(d.id)) {
+                    return 2;
+                }
+                return 1; // default to 1px
             });
-
+    
         // Update edges
         this.mainGroup.selectAll<SVGElement, Edge>('.edge')
             .attr('stroke', (d, i, nodes) => {
@@ -1159,6 +1184,13 @@ export class LineageMap {
             });
     }
 
+    hideFieldDetails(): void {
+        this.hideTransformationPopup();
+        this.selectedField = null;
+        this.highlightedRelatedFields.clear();
+        this.renderHighlights(null);
+    }
+
 
     setupEventListeners(): void {
         this.mainGroup.selectAll('.table-header')
@@ -1169,12 +1201,12 @@ export class LineageMap {
             .attr('data-field-id', (d: unknown) => (d as Node).id)
             .on('mouseenter', (event: any, d: unknown) => {
                 if (this.currentGraph) {
-                    this.handleFieldHover(this.currentGraph, (d as Node).id);
+                    this.handleMouseEnterField(this.currentGraph, (d as Node).id);
                 }
             })
             .on('mouseleave', () => {
                 if (this.currentGraph) {
-                    this.handleFieldHover(this.currentGraph, null);
+                    this.handleMouseLeaveField();
                 }
             })
             .on('click', (event: any, d: unknown) => {
@@ -1185,7 +1217,6 @@ export class LineageMap {
     
         this.mainGroup.selectAll('.table-info-button')
             .on('click', (event: any, d: unknown) => {
-                event.stopPropagation(); // Prevent triggering table expansion
                 const tableNode = d as TableNode;
                 this.showTableInfoPopup(tableNode);
             });
@@ -1194,15 +1225,19 @@ export class LineageMap {
         this.svg.on('click', (event: any) => {
             const target = event.target as HTMLElement;
             const isClickingField = target.closest('.field-group');
-            const isClickingInfoButton = target.closest('.table-info-button');
-            const isClickingPopup = target.closest('.transformation-popup') || target.closest('.table-info-popup');
+            const isClickingTablePopup = target.closest('.table-info-button');
     
-            // Only close popups if clicking outside of relevant elements
-            if (!isClickingField && !isClickingInfoButton && !isClickingPopup) {
-                // Close all popups and reset selection state
-                this.selectedField = null;
-                this.hideTransformationPopup();
+            // Close popups if clicking outside of relevant elements
+            if (isClickingField) {
+                // hide table info pop ups if were clicking on a field
                 this.mainGroup.selectAll('.table-info-popup').remove();
+            } else if (isClickingTablePopup) {
+                // hide field details if were clicking on a table info button 
+                this.hideFieldDetails();
+            } else {
+                // hide field details and hide table info popup if we click anywhere else 
+                this.mainGroup.selectAll('.table-info-popup').remove();
+                this.hideFieldDetails();
             }
         });
     }
